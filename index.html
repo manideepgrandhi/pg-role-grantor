@@ -131,8 +131,23 @@
             <div class="form-actions">
               <button class="button primary" type="submit">
                 Add to script <span aria-hidden="true">＋</span></button
-              ><span class="hint">Review the plan before exporting.</span>
+              ><button
+                class="button"
+                id="reset-form"
+                type="button"
+                aria-describedby="reset-help"
+              >
+                Reset form</button
+              ><span class="hint" id="reset-help"
+                >Reset keeps your script plan.</span
+              >
             </div>
+            <p
+              id="form-feedback"
+              class="hint"
+              role="status"
+              aria-live="polite"
+            ></p>
           </form>
           <div class="plan">
             <div class="plan-heading">

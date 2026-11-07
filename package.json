@@ -10,7 +10,8 @@
     "test:ui": "node tests/browser.cjs",
     "test:fdw": "node tests/fdw-postgres.js",
     "test:fdw-ui": "node tests/fdw-browser.cjs",
-    "examples": "node examples/generate.js"
+    "examples": "node examples/generate.js",
+    "test:reset-ui": "node tests/reset-browser.cjs"
   },
   "description": "Offline PostgreSQL and Aurora PostgreSQL privilege script generator"
 }

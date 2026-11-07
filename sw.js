@@ -1,4 +1,4 @@
-const CACHE = "pg-role-grantor-v3";
+const CACHE = "pg-role-grantor-v4";
 const ASSETS = [
   "./",
   "./index.html",

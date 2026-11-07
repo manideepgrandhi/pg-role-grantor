@@ -128,6 +128,7 @@ const path = require("node:path");
     await page.$eval("#targets", (e) => (e.value = ""));
     await page.click("button[type=submit]");
     check(await page.$eval("#form-error", (e) => !e.hidden));
+    page.once("dialog", (dialog) => dialog.accept());
     await page.click("#clear");
     check(await page.$eval("#plan-count", (e) => e.textContent), "0");
     // Validate keyboard tabs and mobile horizontal overflow.

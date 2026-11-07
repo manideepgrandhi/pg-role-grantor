@@ -11,6 +11,7 @@ let tab = "profile",
   profile = "writer",
   plan = [],
   latest = "";
+const formDrafts = new Map();
 const listHint =
   "Comma-separated or one per line. Enter names without SQL quotes. Case is preserved.";
 function common() {
@@ -35,7 +36,14 @@ function options() {
     "RESTRICT",
   )}</details>`;
 }
+function clearFormFeedback() {
+  $("form-error").hidden = true;
+  $("form-error").textContent = "";
+  $("form-feedback").textContent = "";
+  $("status").textContent = "";
+}
 function renderForm() {
+  clearFormFeedback();
   const entries = catalog(context().version);
   $("operation-panel").setAttribute("aria-labelledby", `tab-${tab}`);
   $("form-error").hidden = true;
@@ -354,12 +362,23 @@ function refresh() {
     `<a href="https://www.postgresql.org/docs/${v}/sql-grant.html" target="_blank" rel="noopener">GRANT reference ↗</a><a href="https://www.postgresql.org/docs/${v}/sql-alterdefaultprivileges.html" target="_blank" rel="noopener">Default privileges ↗</a><a href="https://www.postgresql.org/docs/${v}/predefined-roles.html" target="_blank" rel="noopener">Predefined roles ↗</a><a href="https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/Appendix.PostgreSQL.CommonDBATasks.Roles.rds_superuser.html" target="_blank" rel="noopener">Aurora restrictions ↗</a>`;
 }
 function switchTab(button) {
+  if (button.dataset.tab === tab) return;
+  // Detached controls keep pane-local values and listeners without duplicate IDs.
+  const draft = document.createDocumentFragment();
+  draft.append(...$("operation-panel").childNodes);
+  formDrafts.set(tab, draft);
   tab = button.dataset.tab;
   document.querySelectorAll("[data-tab]").forEach((b) => {
     b.setAttribute("aria-selected", String(b === button));
     b.tabIndex = b === button ? 0 : -1;
   });
-  renderForm();
+  const draftToRestore = formDrafts.get(tab);
+  if (draftToRestore) {
+    formDrafts.delete(tab);
+    $("operation-panel").replaceChildren(draftToRestore);
+    $("operation-panel").setAttribute("aria-labelledby", `tab-${tab}`);
+    clearFormFeedback();
+  } else renderForm();
 }
 document.querySelectorAll("[data-tab]").forEach((button) => {
   button.addEventListener("click", () => switchTab(button));
@@ -381,6 +400,7 @@ document.querySelectorAll("[data-tab]").forEach((button) => {
 });
 $("operation-form").addEventListener("submit", (event) => {
   event.preventDefault();
+  $("form-feedback").textContent = "";
   try {
     const op = readOperation();
     generate(context(), [...plan, op]);
@@ -395,10 +415,27 @@ $("operation-form").addEventListener("submit", (event) => {
 });
 for (const id of ["platform", "version"])
   $(id).addEventListener("change", () => {
+    formDrafts.clear();
+    profile = "writer";
     renderForm();
     refresh();
   });
+$("reset-form").addEventListener("click", () => {
+  if (tab === "profile") profile = "writer";
+  formDrafts.delete(tab);
+  renderForm();
+  $("form-feedback").textContent =
+    "Form reset to defaults. Script plan unchanged.";
+  $("reset-form").focus();
+});
 $("clear").addEventListener("click", () => {
+  if (
+    !plan.length ||
+    !window.confirm(
+      "Clear every operation from the script plan? Your current form and target engine will stay unchanged.",
+    )
+  )
+    return;
   plan = [];
   refresh();
   $("status").textContent = "Script plan cleared.";

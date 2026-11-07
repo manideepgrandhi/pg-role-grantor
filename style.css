@@ -828,3 +828,10 @@ footer {
 .fdw-checklist ul {
   padding-left: 18px;
 }
+
+#form-feedback {
+  margin: 12px 0 0;
+}
+#form-feedback:empty {
+  display: none;
+}

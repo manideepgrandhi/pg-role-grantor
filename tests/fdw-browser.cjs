@@ -96,9 +96,11 @@ const path = require("node:path");
     await page.$eval("#server", (e) => (e.value = "example_server_only"));
     await page.click("button[type=submit]");
     check(await page.$eval("#plan-count", (e) => e.textContent), "3");
+    page.once("dialog", (dialog) => dialog.accept());
     await page.click("#clear");
     await page.click("#tab-profile");
     await page.click("#tab-fdw");
+    await page.click("#reset-form");
     await page.setViewport({ width: 390, height: 844 });
     await page.evaluate(() => scrollTo(0, 0));
     check(
