@@ -1,3 +1,13 @@
+import {
+  identifier,
+  names,
+  qualified,
+  argumentType,
+  quoted,
+  literal,
+} from "./sql-input.js";
+export { identifier, names, qualified, argumentType } from "./sql-input.js";
+import { fdwSetup } from "./fdw.js";
 import { catalog, predefined, PLATFORMS, GENERAL_WARNINGS } from "./catalog.js";
 const fail = (message) => {
   throw new Error(message);
@@ -5,90 +15,6 @@ const fail = (message) => {
 function oneOf(value, values, label) {
   if (!values.includes(value)) fail(`Invalid ${label}.`);
   return value;
-}
-export function identifier(value) {
-  if (
-    typeof value !== "string" ||
-    !value.trim() ||
-    /[\x00-\x1f\x7f]/.test(value)
-  )
-    fail("Names must be non-empty and contain no control characters.");
-  value = value.trim();
-  if (new TextEncoder().encode(value).length > 63)
-    fail("Identifiers must be at most 63 UTF-8 bytes.");
-  return '"' + value.replaceAll('"', '""') + '"';
-}
-export function names(value, optional = false) {
-  const items = Array.isArray(value)
-    ? value
-    : String(value ?? "").split(/[,\n]/);
-  const clean = items.map((x) => String(x).trim()).filter(Boolean);
-  if (!clean.length && !optional) fail("Enter at least one name.");
-  clean.forEach(identifier);
-  return [...new Set(clean)];
-}
-const quoted = (value) => names(value).map(identifier).join(", ");
-const literal = (value) =>
-  "E'" + value.replaceAll("\\", "\\\\").replaceAll("'", "''") + "'";
-export function qualified(value) {
-  const parts = String(value).trim().split(".");
-  if (parts.length > 2)
-    fail("Use name or schema.name. Do not enter SQL quoting.");
-  return parts.map(identifier).join(".");
-}
-export function argumentType(value) {
-  value = String(value).trim();
-  const arrays = value.match(/(?:\[\])+$/)?.[0] ?? "";
-  const base = value.slice(0, value.length - arrays.length).trim();
-  const builtin = [
-    "smallint",
-    "integer",
-    "bigint",
-    "int",
-    "int2",
-    "int4",
-    "int8",
-    "real",
-    "double precision",
-    "numeric",
-    "decimal",
-    "boolean",
-    "bool",
-    "text",
-    "varchar",
-    "character varying",
-    "character",
-    "char",
-    "bytea",
-    "date",
-    "time",
-    "time without time zone",
-    "time with time zone",
-    "timestamp",
-    "timestamp without time zone",
-    "timestamp with time zone",
-    "timestamptz",
-    "timetz",
-    "interval",
-    "uuid",
-    "json",
-    "jsonb",
-    "record",
-    "void",
-    "oid",
-    "regclass",
-    "regtype",
-    "anyelement",
-    "anyarray",
-    "anycompatible",
-    "anycompatiblearray",
-  ];
-  if (builtin.includes(base.toLowerCase())) return base.toLowerCase() + arrays;
-  if (!/^[A-Za-z_][A-Za-z0-9_$]*(?:\.[A-Za-z_][A-Za-z0-9_$]*)?$/.test(base))
-    fail(
-      "Argument types must be built-in types or simple custom type names, optionally schema-qualified and with []. No typmods, modes, names, or SQL expressions.",
-    );
-  return qualified(base) + arrays;
 }
 function grantees(op) {
   return op.public ? "PUBLIC" : quoted(op.grantees);
@@ -360,10 +286,12 @@ export function generate(context, operations) {
     warnings.push(
       "Aurora is managed PostgreSQL, not true superuser access. Catalog syntax follows the selected upstream major; confirm engine-release availability. AWS-managed roles, IAM, parameter groups, and host administration are not configured here.",
     );
-  const chunks = operations.map((op) => {
+  const guards = [];
+  const fdwServers = new Set();
+  const chunks = operations.map((op, index) => {
     oneOf(
       op.kind,
-      ["profile", "object", "default", "membership", "group"],
+      ["profile", "object", "default", "membership", "group", "fdw"],
       "operation",
     );
     if (op.behavior === "CASCADE")
@@ -378,6 +306,15 @@ export function generate(context, operations) {
       warnings.push(
         "Delegation allows recipients to grant privileges or membership to others.",
       );
+    if (op.kind === "fdw") {
+      if (fdwServers.has(op.server))
+        fail("Use one FDW setup per server name in a plan.");
+      fdwServers.add(op.server);
+      const fdw = fdwSetup(ctx, op, index + 1);
+      guards.push(fdw.guard);
+      warnings.push(...fdw.warnings);
+      return fdw.sql;
+    }
     if (op.kind === "profile") return profile(ctx, op, warnings);
     if (op.kind === "object") return objectGrant(ctx, op, warnings);
     if (op.kind === "default") return defaultGrant(ctx, op, warnings);
@@ -394,7 +331,7 @@ export function generate(context, operations) {
       uniqueWarnings.map((w) => "-- " + w).join("\n") +
       "\n\n" +
       (chunks.length
-        ? "BEGIN;\n\n" + chunks.join("\n\n") + "\n\nCOMMIT;\n"
+        ? "BEGIN;\n\n" + [...guards, ...chunks].join("\n\n") + "\n\nCOMMIT;\n"
         : "-- Add an operation to build your script.\n"),
     warnings: uniqueWarnings,
   };

@@ -71,3 +71,37 @@ REVOKE GRANT OPTION FOR SELECT ON TABLE "example_schema"."contacts" FROM "exampl
 In **Membership**, select `pg_monitor` in the predefined-role list. Enter the intended existing member, then review the cluster-wide scope warning. These built-in roles are not the same as scoped reader/writer templates.
 
 AWS-managed roles are intentionally not offered. Aurora restrictions and the actual engine release determine what an administrator can grant.
+
+## Set up FDW with explicit role mappings
+
+Choose **FDW setup** and replace the example connection names. Keep **verify-full** unless your reviewed environment requires another mode.
+
+Add a mapping for each local execution role:
+
+| Local role         | Remote user             |
+| ------------------ | ----------------------- |
+| `example_app`      | `example_remote_reader` |
+| `example_importer` | `example_remote_reader` |
+
+These are existing roles on their respective databases. They do not imply a group membership or an IAM role. Select `example_importer` as the import role. It receives local schema CREATE and owns the imported foreign tables. The application role receives local server USAGE, schema USAGE, and table SELECT, without needing the importer's user mapping.
+
+Select **Import remote schema**, choose **LIMIT TO**, and enter `example_items`. Add the operation and download SQL. The [generated FDW import example](examples/fdw-import.sql) includes a separate marker for each mapping.
+
+Before running, replace every full credential marker in your private SQL file, including the preflight occurrence. Use only the UTF-8 hex encoding of each remote password, not raw password text. Hex is reversible, not encryption. Do not enter passwords into this site. Unmodified scripts fail before any mutation. Guarded mapping blocks also prevent a partially edited script from storing an unresolved password marker.
+
+Configure the remote users' CONNECT, schema USAGE, and table SELECT separately. Local grants do not grant remote access. For read-write access, both local and remote users need the matching write permissions.
+
+## Define a foreign table with a remote column alias
+
+In **FDW setup**, select **Define one foreign table**. Enter local table `example_items` and remote schema and table `example_remote.example_items` using their separate fields.
+
+Add these structured columns:
+
+| Local column  | Type      | Remote column        |
+| ------------- | --------- | -------------------- |
+| `id`          | `integer` | blank, meaning `id`  |
+| `description` | `text`    | `remote_description` |
+
+The generated [manual FDW example](examples/fdw-manual.sql) quotes the remote column as an option string. It does not accept a raw `CREATE FOREIGN TABLE` fragment. Its types must match your real remote columns.
+
+Existing server and mapping definitions are not overwritten. Choose reviewed new object names or manage existing configuration separately. See the [FDW reference](docs/fdw.md) for role identity, TLS, credentials, collision behavior, and Aurora restrictions.

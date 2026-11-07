@@ -24,6 +24,8 @@ Open `http://127.0.0.1:8080`. ES modules need HTTP, so opening `index.html` dire
 6. Read **Before you run this** and inspect the generated SQL.
 7. Select **Copy SQL** or **Download .sql**. Run the script yourself in the intended database using an account with the required authority.
 
+The **FDW setup** pane also generates extension, foreign-server, explicit local-role-to-remote-user mappings, optional schema import or a structured foreign table, and required local grants. Passwords are placeholders only, with blocking preflight guards. Private substitutions accept UTF-8 hex only, never raw passwords in this site. See the [FDW reference](docs/fdw.md).
+
 The app does not discover objects or verify names, creator roles, ownership, or grant authority. PostgreSQL can issue warnings and grant only a subset of the requested privileges. Inspect server output and resulting ACLs, even after a successful transaction.
 
 Changing the platform or major version revalidates the entire plan. Export is disabled if any operation becomes incompatible. Form drafts reset on a tab or target change; operations already added to the plan remain until removed or the page reloads.
@@ -111,7 +113,25 @@ SITE_URL=http://127.0.0.1:8086/ CHROME_BIN=/usr/bin/google-chrome npm run test:u
 
 Set `ARTIFACTS` to change the screenshot and download output directory. The default is `/workspace/pg-role-grantor-artifacts`. The browser suite verifies the actual clipboard, downloaded bytes, offline reload, keyboard tabs, validation, and both responsive layouts. It also rejects unexpected external HTTP requests and browser errors.
 
-Verified in this build: 33 generator tests, 87 real SQL integration checks on PostgreSQL **17.5**, and 29 browser checks on Chrome **156.0.8078.47**. The psql client is 17.11; the tested server is 17.5. Majors 14–16 have catalog and generator tests, not live-engine tests. No Aurora cluster was used.
+Verified in this build: 50 generator tests, 87 privilege SQL integration checks plus 52 FDW integration checks on PostgreSQL **17.5**, and 29 general browser checks plus 24 FDW browser checks on Chrome **156.0.8078.47**. The psql client is 17.11; the tested server is 17.5. Majors 14–16 have catalog and generator tests, not live-engine tests. No Aurora cluster was used.
+
+## Test native FDW setup
+
+The FDW suite creates and destroys its own temporary local PostgreSQL cluster. It needs PostgreSQL 17 server binaries with `postgres_fdw` installed, plus `psql` in PATH. Run it as a non-root OS user:
+
+```sh
+PG_BIN=/path/to/postgresql/bin npm run test:fdw
+```
+
+It creates two disposable databases, ephemeral SCRAM credentials, and loopback-only connections. It tests full import, LIMIT TO, EXCEPT, manual definitions, real reads and writes through distinct local sessions, remote authorization failures, the group-mapping caveat, quote escaping, guards, scoped grants, and collision rollback. Credentials never enter source files, screenshots, or exported examples. The temporary cluster is removed afterward. No external database is contacted. Live TLS certificate verification and Aurora are not tested.
+
+With the local site server and test-only Puppeteer dependency available, run:
+
+```sh
+SITE_URL=http://127.0.0.1:8086/ CHROME_BIN=/usr/bin/google-chrome npm run test:fdw-ui
+```
+
+This suite checks mapping and column rows, mode selection, duplicate mapping validation, downloaded SQL, mobile labels and width, and FDW generation after an offline reload.
 
 ## Host as a static site
 
@@ -120,6 +140,8 @@ Publish these static files to any HTTPS static host. GitHub Pages can serve the 
 Publishing is a separate action from generating SQL. A local build does not prove a public site is deployed. Verify the live URL and browser behavior after deployment. When releasing changed application files, bump the service-worker cache version in `sw.js`.
 
 ## References
+
+Run `npm run examples` to regenerate the standalone SQL examples from `examples/generate.js`. The test suite checks them against the current generator.
 
 The checked-in [versioned catalog evidence](docs/catalog-evidence.json) records the official synopsis for each supported major. [Design choices](docs/architecture.md) describe the stateless operation plan. [Examples](EXAMPLES.md) show common workflows.
 

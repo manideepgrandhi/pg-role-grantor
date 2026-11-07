@@ -1,3 +1,5 @@
+import { esc, field, select, check } from "./form-fields.js";
+import { renderFdwForm, readFdwOperation } from "./fdw-form.js";
 import { catalog, predefined } from "./catalog.js";
 import { generate } from "./generator.js";
 const $ = (id) => document.getElementById(id);
@@ -9,26 +11,6 @@ let tab = "profile",
   profile = "writer",
   plan = [],
   latest = "";
-const esc = (value) =>
-  String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-function field(name, label, value = "", hint = "", type = "input") {
-  const control =
-    type === "textarea"
-      ? `<textarea id="${name}" name="${name}" spellcheck="false">${esc(value)}</textarea>`
-      : `<input id="${name}" name="${name}" value="${esc(value)}" autocomplete="off" spellcheck="false">`;
-  return `<div class="field"><label for="${name}">${label}</label>${control}${hint ? `<p class="hint" id="${name}-hint">${hint}</p>` : ""}</div>`;
-}
-function select(name, label, options, value, hint = "") {
-  return `<div class="field"><label for="${name}">${label}</label><select id="${name}" name="${name}">${options.map(([key, text, disabled]) => `<option value="${esc(key)}"${key === value ? " selected" : ""}${disabled ? " disabled" : ""}>${esc(text)}</option>`).join("")}</select>${hint ? `<p class="hint">${hint}</p>` : ""}</div>`;
-}
-function check(name, label, checked = false) {
-  return `<label class="check"><input type="checkbox" name="${name}" id="${name}"${checked ? " checked" : ""}>${label}</label>`;
-}
 const listHint =
   "Comma-separated or one per line. Enter names without SQL quotes. Case is preserved.";
 function common() {
@@ -93,6 +75,8 @@ function renderForm() {
       $("grantees").disabled = $("public").checked;
     });
     renderObjectFields(defaults);
+  } else if (tab === "fdw") {
+    renderFdwForm($("operation-panel"));
   } else if (tab === "membership") {
     $("operation-panel").innerHTML =
       `<p class="description">Assign existing roles to existing users. Membership is cluster-wide, not limited to a database or schema.</p>${select("builtin", "Predefined PostgreSQL roles", [["", "Custom role"], ...predefined(context().version, context().platform).map((r) => [r.name, `${r.name}${r.disabled ? " · unavailable" : ""}`, r.disabled])], "", "Built-in roles can expose broad cluster-wide capabilities. pg_database_owner has implicit membership only. AWS-managed roles are not generated.")}<p class="description" id="builtin-info"></p><div class="field-grid">${field("roles", "Roles to grant", "example_writer", listHint)}${field("members", "Member users / roles", "example_app", listHint)}</div>${select(
@@ -261,6 +245,7 @@ function renderMemberOptions() {
       : `<div class="field">${check("admin", "Allow member to delegate membership (ADMIN)", false)}</div>${modern ? `<div class="field">${check("inherit", "Automatically inherit privileges (INHERIT)", true)}</div><div class="field">${check("set", "Allow SET ROLE", true)}</div>` : '<p class="description">On 14–15, inheritance follows the member role INHERIT attribute. SET ROLE is available through membership. ADMIN is only added when selected; existing ADMIN is not cleared.</p>'}`;
 }
 function readOperation() {
+  if (tab === "fdw") return readFdwOperation();
   const data = new FormData($("operation-form")),
     op = { kind: tab };
   for (const [key, value] of data) if (key !== "privilege") op[key] = value;
@@ -280,6 +265,8 @@ function readOperation() {
   return op;
 }
 function title(op) {
+  if (op.kind === "fdw")
+    return `FDW ${op.mode} · ${op.server} · ${op.mappings.length} role mapping${op.mappings.length === 1 ? "" : "s"}`;
   if (op.kind === "profile")
     return `${op.profile === "writer" ? "Read + write" : op.profile === "reader" ? "Reader" : "Routine executor"} setup · ${op.group}`;
   if (op.kind === "group") return `Create group · ${op.group}`;

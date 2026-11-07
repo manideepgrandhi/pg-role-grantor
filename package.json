@@ -4,10 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test tests/generator.test.js",
+    "test": "node --test tests/*.test.js",
     "serve": "python3 -m http.server 8080 --bind 127.0.0.1",
     "test:postgres": "node tests/postgres.js",
-    "test:ui": "node tests/browser.cjs"
+    "test:ui": "node tests/browser.cjs",
+    "test:fdw": "node tests/fdw-postgres.js",
+    "test:fdw-ui": "node tests/fdw-browser.cjs",
+    "examples": "node examples/generate.js"
   },
   "description": "Offline PostgreSQL and Aurora PostgreSQL privilege script generator"
 }

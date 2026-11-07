@@ -1,4 +1,4 @@
-const CACHE = "pg-role-grantor-v1";
+const CACHE = "pg-role-grantor-v3";
 const ASSETS = [
   "./",
   "./index.html",
@@ -7,6 +7,10 @@ const ASSETS = [
   "./src/catalog.js",
   "./src/generator.js",
   "./src/app.js",
+  "./src/sql-input.js",
+  "./src/fdw.js",
+  "./src/form-fields.js",
+  "./src/fdw-form.js",
 ];
 self.addEventListener("install", (event) =>
   event.waitUntil(

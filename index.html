@@ -93,6 +93,15 @@
             >
               Defaults</button
             ><button
+              id="tab-fdw"
+              role="tab"
+              aria-controls="operation-panel"
+              aria-selected="false"
+              tabindex="-1"
+              data-tab="fdw"
+            >
+              FDW setup</button
+            ><button
               id="tab-membership"
               role="tab"
               aria-controls="operation-panel"
@@ -206,8 +215,11 @@
             Ownership, ALTER/DROP authority, elevated role attributes, RLS
             policies, passwords, and AWS IAM are not GRANT privileges and are
             not configured here. Aurora host-level operations may be unavailable
-            even when SQL syntax exists. No database connection, account
-            sign-in, execution, analytics, or form-data storage.
+            even when SQL syntax exists. FDW setup generates extension, server,
+            explicit user mappings, optional import or manual foreign tables,
+            and local grants. Passwords are placeholders only. No database
+            connection, account sign-in, execution, analytics, or form-data
+            storage.
           </p>
           <div class="table-wrap">
             <table>
