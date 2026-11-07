@@ -80,6 +80,7 @@ const path = require("node:path");
     await page.click("button[type=submit]");
     check(await page.$eval("#plan-count", (e) => e.textContent), "2");
     await page.select("#object", "procedure");
+    await page.click('[name=privilege][value="EXECUTE"]');
     await page.click("button[type=submit]");
     check(
       (await page.$eval("#sql-code", (e) => e.textContent)).includes(
@@ -87,6 +88,7 @@ const path = require("node:path");
       ),
     );
     await page.select("#object", "parameter");
+    await page.click('[name=privilege][value="SET"]');
     await page.click("button[type=submit]");
     check(await page.$eval("#plan-count", (e) => e.textContent), "4");
     await page.select("#version", "14");
@@ -96,6 +98,7 @@ const path = require("node:path");
     check(await page.$eval("#download", (b) => !b.disabled));
     await page.click("#tab-default");
     await page.select("#object", "schema");
+    await page.click('[name=privilege][value="USAGE"]');
     check(await page.$eval("#schemas", (e) => e.value), "");
     await page.click("button[type=submit]");
     check(
@@ -104,18 +107,19 @@ const path = require("node:path");
       ),
     );
     await page.click("#tab-membership");
-    await page.select("#builtin", "pg_monitor");
-    check(await page.$eval("#roles", (e) => e.value), "pg_monitor");
+    await page.click('[name=builtin][value="pg_monitor"]');
+    check(await page.$eval("#roles", (e) => e.value), "");
     await page.click("button[type=submit]");
     check(await page.$eval("#plan-count", (e) => e.textContent), "6");
     await page.select("#platform", "aurora");
     await page.click("#tab-membership");
     check(
       await page.$eval(
-        'option[value="pg_execute_server_program"]',
+        '[name=builtin][value="pg_execute_server_program"]',
         (e) => e.disabled,
       ),
     );
+    await page.click('[name=builtin][value="pg_monitor"]');
     await page.select("#action", "revoke");
     await page.select("#revokeOption", "SET");
     await page.click("button[type=submit]");

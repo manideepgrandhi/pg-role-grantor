@@ -32,6 +32,16 @@ Changing the platform or major version revalidates the entire plan. Export is di
 
 **Reset form** restores only the current pane to its initial example values and clears its validation messages. It keeps the script plan, selected platform and version, and other panes' drafts. **Clear plan** asks for confirmation when the plan contains operations. Cancel keeps everything unchanged. Confirm removes only queued SQL, not the current form or target.
 
+## Choose multiple permissions or roles
+
+**Object grants** and **Defaults** use checkbox groups. **Select all** checks every listed individual permission. **Clear all** unchecks the group. The separate **ALL PRIVILEGES** checkbox generates PostgreSQL's `ALL PRIVILEGES` syntax and cannot stay checked with individual permissions.
+
+Changing the object type keeps only shared individual selections. It clears **ALL PRIVILEGES** rather than applying broad access to another object type. If no selections remain, choose permissions before adding the operation.
+
+**Membership** combines checked predefined roles with the **Custom roles** text list. Duplicate names appear once in the generated membership statement. No predefined roles are checked automatically, and the custom list starts empty. Select at least one role or enter a custom name. **Select all** includes every available predefined role, including powerful roles on PostgreSQL. Review the role descriptions and generated warnings before adding the operation. Unavailable roles stay disabled for the selected platform and major version.
+
+Single-choice settings stay as dropdowns or profile buttons. Schema, object, creator, and custom role names remain text inputs because the site does not connect to a database.
+
 ## Coverage
 
 The catalog supports upstream PostgreSQL majors **14, 15, 16, and 17**. It does not claim support for 18 or later. Aurora mode uses the selected upstream major's SQL grammar and displays managed-service restrictions. It does not certify every Aurora engine minor release or regional availability.
@@ -115,7 +125,7 @@ SITE_URL=http://127.0.0.1:8086/ CHROME_BIN=/usr/bin/google-chrome npm run test:u
 
 Set `ARTIFACTS` to change the screenshot and download output directory. The default is `/workspace/pg-role-grantor-artifacts`. The browser suite verifies the actual clipboard, downloaded bytes, offline reload, keyboard tabs, validation, and both responsive layouts. It also rejects unexpected external HTTP requests and browser errors.
 
-Verified in this build: 50 generator tests, 87 privilege SQL integration checks plus 52 FDW integration checks on PostgreSQL **17.5**, and 29 general browser checks, 24 FDW browser checks, and 126 reset browser checks on Chrome **156.0.8078.47**. The psql client is 17.11; the tested server is 17.5. Majors 14–16 have catalog and generator tests, not live-engine tests. No Aurora cluster was used.
+Verified in this build: 53 generator tests, 93 privilege SQL integration checks plus 52 FDW integration checks on PostgreSQL **17.5**, and 29 general browser checks, 24 FDW browser checks, 126 reset browser checks, and 169 checkbox browser checks on Chrome **156.0.8078.47**. The psql client is 17.11; the tested server is 17.5. Majors 14–16 have catalog and generator tests, not live-engine tests. No Aurora cluster was used.
 
 Run the reset browser suite against the same local server:
 
@@ -124,6 +134,14 @@ SITE_URL=http://127.0.0.1:8086/ CHROME_BIN=/usr/bin/google-chrome npm run test:r
 ```
 
 It checks all six panes, preserved drafts and queued SQL, version-aware defaults, FDW rows and modes, validation cleanup, keyboard activation and focus, Clear plan cancellation and confirmation, and mobile width. Set `SITE_URL` to the deployed HTTPS URL to run browser checks against the public site.
+
+Run the multi-selection browser suite with the same server and test dependency:
+
+```sh
+SITE_URL=http://127.0.0.1:8086/ CHROME_BIN=/usr/bin/google-chrome npm run test:checkbox-ui
+```
+
+It checks multi-permission and multi-role SQL, Select all and Clear all, ALL PRIVILEGES exclusivity, empty-choice validation, version and platform restrictions, Reset form, preserved queued SQL and other drafts, keyboard controls, offline generation, and desktop and mobile layouts.
 
 ## Test native FDW setup
 

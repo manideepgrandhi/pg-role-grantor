@@ -18,3 +18,7 @@ export function select(name, label, options, value, hint = "") {
 export function check(name, label, checked = false) {
   return `<label class="check"><input type="checkbox" name="${name}" id="${name}"${checked ? " checked" : ""}>${label}</label>`;
 }
+
+export function checkboxGroup(id, legend, hint, choices) {
+  return `<fieldset class="choice-group" id="${id}" aria-describedby="${id}-hint"><legend>${esc(legend)}</legend><div class="choice-actions"><button class="text-button" type="button" id="${id}-select-all" aria-label="Select all ${esc(legend.toLowerCase())}">Select all</button><button class="text-button" type="button" id="${id}-clear-all" aria-label="Clear all ${esc(legend.toLowerCase())}">Clear all</button></div><p class="hint" id="${id}-hint">${esc(hint)}</p><div class="checks" id="${id}-choices">${choices.map(({ value, name, label = value, checked = false, disabled = false, all = false }, i) => `<label class="check${all ? " all-privileges" : ""}" for="${id}-${i}"><input type="checkbox" id="${id}-${i}" name="${name}" value="${esc(value)}"${checked ? " checked" : ""}${disabled ? " disabled" : ""}><span>${esc(label)}</span></label>`).join("")}</div></fieldset>`;
+}

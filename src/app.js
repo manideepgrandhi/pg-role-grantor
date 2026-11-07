@@ -1,7 +1,8 @@
-import { esc, field, select, check } from "./form-fields.js";
+import { esc, field, select, check, checkboxGroup } from "./form-fields.js";
 import { renderFdwForm, readFdwOperation } from "./fdw-form.js";
 import { catalog, predefined } from "./catalog.js";
 import { generate } from "./generator.js";
+import { names } from "./sql-input.js";
 const $ = (id) => document.getElementById(id);
 const context = () => ({
   platform: $("platform").value,
@@ -42,6 +43,32 @@ function clearFormFeedback() {
   $("form-feedback").textContent = "";
   $("status").textContent = "";
 }
+function bindChoices(id, exclusiveValue, onChange = () => {}) {
+  const inputs = () => [...$(id).querySelectorAll('input[type="checkbox"]')];
+  $(id + "-select-all").addEventListener("click", () => {
+    inputs().forEach((input) => {
+      input.checked = !input.disabled && input.value !== exclusiveValue;
+    });
+    onChange();
+  });
+  $(id + "-clear-all").addEventListener("click", () => {
+    inputs().forEach((input) => (input.checked = false));
+    onChange();
+  });
+  inputs().forEach((input) =>
+    input.addEventListener("change", () => {
+      if (input.checked && exclusiveValue)
+        inputs().forEach((other) => {
+          if (
+            input !== other &&
+            (input.value === exclusiveValue || other.value === exclusiveValue)
+          )
+            other.checked = false;
+        });
+      onChange();
+    }),
+  );
+}
 function renderForm() {
   clearFormFeedback();
   const entries = catalog(context().version);
@@ -77,8 +104,10 @@ function renderForm() {
       .filter(([, v]) => !defaults || v.defaults)
       .map(([k, v]) => [k, v.label]);
     $("operation-panel").innerHTML =
-      `<p class="description">${defaults ? "Configure future-object grants for each actual creator role. This does not change existing objects." : "Grant or revoke explicit privileges. Add another operation for a different object or permission set."}</p>${common()}${select("object", "Object type", choices, "table")}<div id="object-fields"></div><div class="field"><span class="label">Permissions</span><div class="checks" id="permissions"></div></div>${options()}`;
-    $("object").addEventListener("change", () => renderObjectFields(defaults));
+      `<p class="description">${defaults ? "Configure future-object grants for each actual creator role. This does not change existing objects." : "Grant or revoke explicit privileges. Add another operation for a different object or permission set."}</p>${common()}${select("object", "Object type", choices, "table")}<div id="object-fields"></div><div id="permissions"></div>${options()}`;
+    $("object").addEventListener("change", () =>
+      renderObjectFields(defaults, true),
+    );
     $("public").addEventListener("change", () => {
       $("grantees").disabled = $("public").checked;
     });
@@ -86,8 +115,19 @@ function renderForm() {
   } else if (tab === "fdw") {
     renderFdwForm($("operation-panel"));
   } else if (tab === "membership") {
+    const builtins = predefined(context().version, context().platform);
     $("operation-panel").innerHTML =
-      `<p class="description">Assign existing roles to existing users. Membership is cluster-wide, not limited to a database or schema.</p>${select("builtin", "Predefined PostgreSQL roles", [["", "Custom role"], ...predefined(context().version, context().platform).map((r) => [r.name, `${r.name}${r.disabled ? " · unavailable" : ""}`, r.disabled])], "", "Built-in roles can expose broad cluster-wide capabilities. pg_database_owner has implicit membership only. AWS-managed roles are not generated.")}<p class="description" id="builtin-info"></p><div class="field-grid">${field("roles", "Roles to grant", "example_writer", listHint)}${field("members", "Member users / roles", "example_app", listHint)}</div>${select(
+      `<p class="description">Assign existing roles to existing users. Membership is cluster-wide, not limited to a database or schema.</p>${checkboxGroup(
+        "builtin",
+        "Predefined PostgreSQL roles",
+        "No predefined roles are selected automatically. Select all includes powerful roles, including host-file and program access where available. Review every selection. Unavailable roles stay disabled. AWS-managed roles are not generated.",
+        builtins.map((r) => ({
+          value: r.name,
+          name: "builtin",
+          label: r.name + (r.disabled ? " · " + r.note : ""),
+          disabled: r.disabled,
+        })),
+      )}<div class="description" id="builtin-info" aria-live="polite"></div><div class="field-grid">${field("roles", "Custom roles", "", "Optional with checked predefined roles. Example: example_writer. " + listHint)}${field("members", "Member users / roles", "example_app", listHint)}</div>${select(
         "action",
         "Operation",
         [
@@ -96,13 +136,20 @@ function renderForm() {
         ],
         "grant",
       )}<div id="member-options"></div>`;
-    $("builtin").addEventListener("change", () => {
-      const role = predefined(context().version, context().platform).find(
-        (r) => r.name === $("builtin").value,
+    bindChoices("builtin", undefined, () => {
+      const selected = new Set(
+        [...document.querySelectorAll('[name="builtin"]:checked')].map(
+          (el) => el.value,
+        ),
       );
-      if (role) $("roles").value = role.name;
-      $("builtin-info").textContent = role
-        ? `${role.description} ${role.note}`
+      $("builtin-info").innerHTML = selected.size
+        ? `<ul>${builtins
+            .filter((r) => selected.has(r.name))
+            .map(
+              (r) =>
+                `<li><strong>${esc(r.name)}</strong>: ${esc(r.description)} ${esc(r.note)}</li>`,
+            )
+            .join("")}</ul>`
         : "";
     });
     $("action").addEventListener("change", renderMemberOptions);
@@ -118,7 +165,14 @@ function renderForm() {
         el.setAttribute("aria-describedby", el.id + "-hint");
     });
 }
-function renderObjectFields(defaults) {
+function renderObjectFields(defaults, preserveSelection = false) {
+  const previous = preserveSelection
+    ? new Set(
+        [...document.querySelectorAll('[name="privilege"]:checked')]
+          .map((el) => el.value)
+          .filter((value) => value !== "ALL PRIVILEGES"),
+      )
+    : null;
   const key = $("object").value,
     entry = catalog(context().version)[key];
   let html;
@@ -148,25 +202,18 @@ function renderObjectFields(defaults) {
         : ""
     }<div id="target-fields"></div>`;
   $("object-fields").innerHTML = html;
-  $("permissions").innerHTML = [...entry.privileges, "ALL PRIVILEGES"]
-    .map(
-      (p, i) =>
-        `<label class="check"><input type="checkbox" name="privilege" value="${p}"${i === 0 ? " checked" : ""}>${p}</label>`,
-    )
-    .join("");
-  document.querySelectorAll("[name=privilege]").forEach((el) =>
-    el.addEventListener("change", () => {
-      if (el.checked)
-        document.querySelectorAll("[name=privilege]").forEach((other) => {
-          if (
-            (el.value === "ALL PRIVILEGES" ||
-              other.value === "ALL PRIVILEGES") &&
-            el !== other
-          )
-            other.checked = false;
-        });
-    }),
+  $("permissions").innerHTML = checkboxGroup(
+    "permission",
+    "Permissions",
+    "Select all checks the listed individual permissions. ALL PRIVILEGES uses PostgreSQL's ALL syntax instead and cannot be combined with individual selections. Changing object type keeps shared individual selections only.",
+    [...entry.privileges, "ALL PRIVILEGES"].map((value, i) => ({
+      value,
+      name: "privilege",
+      checked: previous ? previous.has(value) : i === 0,
+      all: value === "ALL PRIVILEGES",
+    })),
   );
+  bindChoices("permission", "ALL PRIVILEGES");
   if (!defaults) {
     if ($("scope")) $("scope").addEventListener("change", renderTargets);
     renderTargets();
@@ -269,6 +316,16 @@ function readOperation() {
   if (tab === "profile") op.profile = profile;
   if (tab === "object" || tab === "default")
     op.privileges = data.getAll("privilege");
+  if (tab === "membership") {
+    op.roles = names(
+      [...names(op.roles, true), ...data.getAll("builtin")],
+      true,
+    );
+    if (!op.roles.length)
+      throw new Error(
+        "Choose at least one predefined role or enter a custom role.",
+      );
+  }
   delete op.builtin;
   return op;
 }
@@ -279,7 +336,7 @@ function title(op) {
     return `${op.profile === "writer" ? "Read + write" : op.profile === "reader" ? "Reader" : "Routine executor"} setup · ${op.group}`;
   if (op.kind === "group") return `Create group · ${op.group}`;
   if (op.kind === "membership")
-    return `${op.action === "revoke" ? "Revoke" : "Grant"} membership · ${op.roles}`;
+    return `${op.action === "revoke" ? "Revoke" : "Grant"} membership · ${Array.isArray(op.roles) ? op.roles.join(", ") : op.roles}`;
   return `${op.kind === "default" ? "Future" : "Existing"} ${op.object} · ${op.action === "revoke" ? "REVOKE" : "GRANT"} ${op.privileges.join(", ")}`;
 }
 function highlight(sql) {

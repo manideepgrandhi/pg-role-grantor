@@ -313,3 +313,80 @@ test("plan is pure, deterministic, transactional, and does not mutate input", ()
   assert.equal(JSON.stringify(operations), before);
   assert.match(generate(ctx, operations).sql, /BEGIN;[\s\S]+COMMIT;/);
 });
+
+test("multiple predefined and custom role arrays preserve SQL, warnings, and deduplication", () => {
+  for (const platform of ["postgres", "aurora"])
+    for (const version of [14, 15, 16, 17]) {
+      const result = generate({ platform, version }, [
+        {
+          kind: "membership",
+          roles: [
+            "custom_access",
+            "pg_monitor",
+            "pg_read_all_settings",
+            "pg_monitor",
+          ],
+          members: ["app", "reporter"],
+        },
+      ]);
+      assert.match(
+        result.sql,
+        /GRANT "custom_access", "pg_monitor", "pg_read_all_settings" TO "app", "reporter";/,
+      );
+      assert.ok(result.warnings.some((w) => w.startsWith("pg_monitor:")));
+      assert.ok(
+        result.warnings.some((w) => w.startsWith("pg_read_all_settings:")),
+      );
+      assert.doesNotMatch(result.sql, /WITH ADMIN/);
+      assert.match(
+        generate({ platform, version }, [
+          {
+            kind: "membership",
+            action: "revoke",
+            roles: ["pg_monitor", "pg_read_all_settings"],
+            members: "app",
+          },
+        ]).sql,
+        /REVOKE "pg_monitor", "pg_read_all_settings" FROM "app" RESTRICT;/,
+      );
+    }
+});
+test("role arrays fail closed for empty, unavailable, implicit and AWS-managed choices", () => {
+  for (const roles of [
+    [],
+    ["pg_monitor", "pg_database_owner"],
+    ["pg_monitor", "rds_superuser"],
+    ["pg_monitor", "aurora_admin"],
+  ])
+    assert.throws(() => sql({ kind: "membership", roles, members: "app" }));
+  assert.throws(() =>
+    generate({ platform: "postgres", version: 14 }, [
+      {
+        kind: "membership",
+        roles: ["pg_monitor", "pg_maintain"],
+        members: "app",
+      },
+    ]),
+  );
+  assert.throws(() =>
+    generate({ platform: "aurora", version: 17 }, [
+      {
+        kind: "membership",
+        roles: ["pg_monitor", "pg_execute_server_program"],
+        members: "app",
+      },
+    ]),
+  );
+});
+test("custom role array elements remain quoted identifiers", () => {
+  const role = 'custom"; DROP ROLE victim; --';
+  assert.ok(
+    sql({
+      kind: "membership",
+      roles: [role, "pg_monitor"],
+      members: "app",
+    }).includes(
+      'GRANT "custom""; DROP ROLE victim; --", "pg_monitor" TO "app";',
+    ),
+  );
+});

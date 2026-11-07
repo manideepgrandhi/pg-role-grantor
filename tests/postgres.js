@@ -281,6 +281,30 @@ try {
     }),
   );
   count++;
+  // The checkbox UI submits a deduplicated array of custom and predefined roles.
+  const multiRoles = [group, "pg_monitor", "pg_read_all_settings"];
+  run(
+    grant({
+      kind: "membership",
+      roles: multiRoles,
+      members: receiver,
+      admin: false,
+      inherit: true,
+      set: false,
+    }),
+  );
+  for (const role of multiRoles)
+    check(run(`SELECT pg_has_role('${receiver}', '${role}', 'MEMBER');`));
+  run(
+    grant({
+      kind: "membership",
+      roles: multiRoles,
+      members: receiver,
+      action: "revoke",
+    }),
+  );
+  for (const role of multiRoles)
+    check(run(`SELECT pg_has_role('${receiver}', '${role}', 'MEMBER');`), "f");
   // No authority to grant a new role: transaction must roll back its created group.
   const rollbackRole = `${tag}_rollback`;
   roles.push(rollbackRole);
