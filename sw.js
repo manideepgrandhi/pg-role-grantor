@@ -1,4 +1,4 @@
-const CACHE = "pg-role-grantor-v5";
+const CACHE = "pg-role-grantor-v6";
 const ASSETS = [
   "./",
   "./index.html",
@@ -7,6 +7,8 @@ const ASSETS = [
   "./src/catalog.js",
   "./src/generator.js",
   "./src/app.js",
+  "./src/plan-review.js",
+  "./src/verification.js",
   "./src/sql-input.js",
   "./src/fdw.js",
   "./src/form-fields.js",

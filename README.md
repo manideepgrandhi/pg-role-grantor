@@ -22,7 +22,7 @@ Open `http://127.0.0.1:8080`. ES modules need HTTP, so opening `index.html` dire
 4. Select **Add to script**.
 5. Add individual object grants, default privileges, memberships, or another group as needed. Remove an operation to replace it.
 6. Read **Before you run this** and inspect the generated SQL.
-7. Select **Copy SQL** or **Download .sql**. Run the script yourself in the intended database using an account with the required authority.
+7. Select **Setup SQL**, then **Copy setup SQL** or **Download .sql**. Run the script yourself in the intended database using an account with the required authority.
 
 The **FDW setup** pane also generates extension, foreign-server, explicit local-role-to-remote-user mappings, optional schema import or a structured foreign table, and required local grants. Passwords are placeholders only, with blocking preflight guards. Private substitutions accept UTF-8 hex only, never raw passwords in this site. See the [FDW reference](docs/fdw.md).
 
@@ -41,6 +41,26 @@ Changing the object type keeps only shared individual selections. It clears **AL
 **Membership** combines checked predefined roles with the **Custom roles** text list. Duplicate names appear once in the generated membership statement. No predefined roles are checked automatically, and the custom list starts empty. Select at least one role or enter a custom name. **Select all** includes every available predefined role, including powerful roles on PostgreSQL. Review the role descriptions and generated warnings before adding the operation. Unavailable roles stay disabled for the selected platform and major version.
 
 Single-choice settings stay as dropdowns or profile buttons. Schema, object, creator, and custom role names remain text inputs because the site does not connect to a database.
+
+## Review requests and inspect the result
+
+The **Permission summary** shows queued requests in their original order. Expand each item to see recipients, privileges, object or schema scope, grant options, creators, and memberships. Profiles expand into group creation, existing-object grants, future defaults, and membership. FDW items include role mappings, import or manual-table intent, and local grants. Form drafts are not included.
+
+The summary describes intent, not verified database state or a calculated final ACL. Duplicate and conflicting requests remain visible. A later REVOKE can supersede an earlier GRANT.
+
+Select **Setup SQL** to copy or download `permission-plan.sql`. After executing that reviewed script yourself, select **Verification SQL** to export `permission-verification.sql`. The site never runs either script. Verification consists only of SELECT queries against local catalogs and built-in privilege inquiry functions. It does not execute target routines, create future test objects, retrieve mapping credentials, or contact foreign servers.
+
+Each inspection result contains the requested operation and JSON evidence. Compare these fields yourself:
+
+- `explicit_acl_privilege` and `explicit_acl_grant_option` describe stored direct ACL entries for the exact recipient. A null ACL has no explicit entries, even when PostgreSQL grants built-in access.
+- `effective_privilege` and `effective_grant_option` separately include PostgreSQL's effective access rules. Inherited roles, PUBLIC, owners, and superusers can retain access after a direct revoke. These functions do not prove row access through RLS or that a view or foreign table supports the requested operation.
+- Default-ACL evidence distinguishes explicit global and per-schema rows, global or built-in privileges, and their additive combination for the exact creator and recipient. It reports configured defaults, not a live test of future object creation or inherited access.
+- Membership evidence includes direct rows and grantors, ADMIN, indirect membership, and immediately inherited role usage. PostgreSQL 16–17 also report per-membership INHERIT and SET. Versions 14–15 report the member role's INHERIT attribute instead.
+- FDW evidence includes extension/server presence, mapping presence, local foreign-table inventories, owners, column types, nullability, and local ACLs. It selects only mapping identifiers from `pg_user_mappings`, never `umoptions`. Remote usernames, passwords, connection options, TLS, remote authority, column mapping options, and import completeness are not verified.
+
+There are no automatic PASS verdicts. Missing roles, columns, or named objects produce missing-status rows. An empty all-in-schema inventory reports no matching objects or a missing schema. Large objects expose explicit ACL evidence only, with effective-access columns null. CASCADE effects on unrelated grantees are not audited.
+
+Run verification in the intended database, with the same `search_path` and selected PostgreSQL major version. The first query reports the connected database, inspecting role, and actual major. Catalog permissions or visibility can limit results. No Aurora runtime validation is implied. Use the same unchanged plan to generate both files.
 
 ## Coverage
 
@@ -125,7 +145,7 @@ SITE_URL=http://127.0.0.1:8086/ CHROME_BIN=/usr/bin/google-chrome npm run test:u
 
 Set `ARTIFACTS` to change the screenshot and download output directory. The default is `/workspace/pg-role-grantor-artifacts`. The browser suite verifies the actual clipboard, downloaded bytes, offline reload, keyboard tabs, validation, and both responsive layouts. It also rejects unexpected external HTTP requests and browser errors.
 
-Verified in this build: 53 generator tests, 93 privilege SQL integration checks plus 52 FDW integration checks on PostgreSQL **17.5**, and 29 general browser checks, 24 FDW browser checks, 126 reset browser checks, and 169 checkbox browser checks on Chrome **156.0.8078.47**. The psql client is 17.11; the tested server is 17.5. Majors 14–16 have catalog and generator tests, not live-engine tests. No Aurora cluster was used.
+Verified in this build: 73 generator and review tests, 93 privilege SQL integration checks plus 149 read-only verification checks, and 52 FDW integration checks plus 41 FDW read-only inspection checks on PostgreSQL **17.5**, and 29 general browser checks, 24 FDW browser checks, 126 reset browser checks, 169 checkbox browser checks, and 79 summary and verification browser checks on Chrome **156.0.8078.47**. The psql client is 17.11; the tested server is 17.5. Majors 14–16 have catalog and generator tests, not live-engine tests. No Aurora cluster was used.
 
 Run the reset browser suite against the same local server:
 
@@ -142,6 +162,14 @@ SITE_URL=http://127.0.0.1:8086/ CHROME_BIN=/usr/bin/google-chrome npm run test:c
 ```
 
 It checks multi-permission and multi-role SQL, Select all and Clear all, ALL PRIVILEGES exclusivity, empty-choice validation, version and platform restrictions, Reset form, preserved queued SQL and other drafts, keyboard controls, offline generation, and desktop and mobile layouts.
+
+Run the summary and verification browser suite with the same server:
+
+```sh
+SITE_URL=http://127.0.0.1:8086/ CHROME_BIN=/usr/bin/google-chrome npm run test:review-ui
+```
+
+This suite checks all operation panes, summary updates, setup and verification modes, actual clipboard and downloaded bytes, draft preservation, reset, version restrictions, keyboard controls, mobile layout, and offline generation. The local PostgreSQL suites also execute the generated inspection queries in read-only transactions before and after permission changes.
 
 ## Test native FDW setup
 

@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { generate, identifier as q } from "../src/generator.js";
+import { generateVerification } from "../src/verification.js";
 import { catalog } from "../src/catalog.js";
 const host = process.env.PGHOST || "/tmp",
   port = process.env.PGPORT || "5544",
@@ -19,6 +20,7 @@ const tag = `pgg_${process.pid}`,
   receiver = `${tag}_target`;
 const roles = [creator, member, group, reader, readUser, receiver],
   ctx = { platform: "postgres", version: 17 };
+let verificationChecks = 0;
 let count = 0,
   created = false;
 function run(sql, database = db, ok = true) {
@@ -52,6 +54,21 @@ function check(value, expected = "t") {
   count++;
 }
 const grant = (op) => generate(ctx, [op]).sql;
+function inspect(operations, context = ctx) {
+  return run(
+    "BEGIN READ ONLY;" +
+      generateVerification(context, operations).sql +
+      "ROLLBACK;",
+  )
+    .split("\n")
+    .filter((line) => line.startsWith("{"))
+    .map((line) => JSON.parse(line));
+}
+function verify(value, expected = true) {
+  assert.deepEqual(value, expected);
+  verificationChecks++;
+}
+
 try {
   console.log(run("SELECT version();", "postgres"));
   const major = Number(
@@ -79,9 +96,38 @@ try {
     creators: creator,
     members: member,
   };
+  verify(
+    inspect([setup])
+      .flatMap((x) => x.evidence)
+      .some((x) => x.status === "MISSING_ROLE"),
+  );
   const setupSQL = grant(setup);
   run(setupSQL);
   run(setupSQL);
+  const snapshot = () =>
+    run(
+      "SELECT md5((SELECT string_agg(oid::text||COALESCE(relacl::text,''),',' ORDER BY oid) FROM pg_class)||(SELECT string_agg(oid::text||rolname,',' ORDER BY oid) FROM pg_roles)||COALESCE((SELECT string_agg(oid::text||defaclacl::text,',' ORDER BY oid) FROM pg_default_acl),''));",
+    );
+  const beforeInspection = snapshot();
+  const groupAttributes = inspect([setup])[0].evidence[0];
+  verify(
+    [
+      groupAttributes.rolcanlogin,
+      groupAttributes.rolsuper,
+      groupAttributes.rolcreatedb,
+      groupAttributes.rolcreaterole,
+      groupAttributes.rolreplication,
+      groupAttributes.rolbypassrls,
+      groupAttributes.rolinherit,
+    ],
+    [false, false, false, false, false, false, true],
+  );
+  verify(
+    inspect([setup])
+      .flatMap((x) => x.evidence)
+      .every((x) => !String(x.status).startsWith("MISSING")),
+  );
+  verify(snapshot(), beforeInspection);
   check(
     run(
       `SELECT has_table_privilege('${member}','s.existing','SELECT,INSERT,UPDATE,DELETE');`,
@@ -171,6 +217,35 @@ try {
     ),
     "f",
   );
+  run(
+    "CREATE FUNCTION s.fn(text) RETURNS text LANGUAGE SQL AS 'SELECT $1';CREATE FUNCTION s.never_run(integer) RETURNS integer LANGUAGE plpgsql AS $$BEGIN RAISE EXCEPTION 'Must not execute target routines'; END;$$;",
+  );
+  verify(
+    inspect([
+      {
+        kind: "object",
+        object: "function",
+        targets: "s.fn",
+        argTypes: "integer",
+        grantees: member,
+        privileges: ["EXECUTE"],
+      },
+    ])[0].evidence.map((row) => row.object_identity),
+    ["s.fn(integer)"],
+  );
+  verify(
+    inspect([
+      {
+        kind: "object",
+        object: "function",
+        targets: "s.never_run",
+        argTypes: "integer",
+        grantees: member,
+        privileges: ["EXECUTE"],
+      },
+    ])[0].evidence[0].status,
+    "INSPECT_EVIDENCE",
+  );
   // Syntax and server acceptance across every current-object grant category.
   run(
     `CREATE FOREIGN DATA WRAPPER example_fdw;CREATE SERVER example_server FOREIGN DATA WRAPPER example_fdw;SELECT lo_create(12345);`,
@@ -206,6 +281,12 @@ try {
     };
     run(grant(operation));
     count++;
+    const granted = inspect([operation])[0].evidence;
+    verify(
+      granted.every(
+        (row) => row.explicit_acl_privilege && row.explicit_acl_grant_option,
+      ),
+    );
     run(
       grant({
         ...operation,
@@ -215,6 +296,12 @@ try {
       }),
     );
     count++;
+    const optionsRemoved = inspect([operation])[0].evidence;
+    verify(
+      optionsRemoved.every(
+        (row) => row.explicit_acl_privilege && !row.explicit_acl_grant_option,
+      ),
+    );
     run(
       grant({
         ...operation,
@@ -224,6 +311,46 @@ try {
       }),
     );
     count++;
+    verify(
+      inspect([operation])[0].evidence.every(
+        (row) => !row.explicit_acl_privilege,
+      ),
+    );
+    const missing = {
+      ...operation,
+      targets:
+        object === "largeobject"
+          ? "4294967294"
+          : entry.qualified
+            ? "missing_schema.missing_object"
+            : "missing_object",
+    };
+    verify(
+      inspect([missing])[0].evidence.every(
+        (row) => row.status === "MISSING_OBJECT",
+      ),
+    );
+    verify(
+      inspect([
+        { ...operation, grantees: "missing_recipient" },
+      ])[0].evidence.every(
+        (row) =>
+          row.status === "MISSING_RECIPIENT" &&
+          row.effective_privilege === null,
+      ),
+    );
+    inspect([{ ...operation, public: true, grantOption: false }]);
+    verificationChecks++;
+    if (entry.all) {
+      inspect([{ ...operation, scope: "all", schemas: "s" }]);
+      verificationChecks++;
+    }
+    if (object === "function")
+      verify(
+        inspect([operation])[0].evidence.every(
+          (row) => !row.explicit_acl_privilege && row.effective_privilege,
+        ),
+      );
   }
   for (const [object, e] of Object.entries(catalog(17)))
     if (e.defaults) {
@@ -238,6 +365,13 @@ try {
       };
       run(grant(operation));
       count++;
+      verify(
+        inspect([operation])[0].evidence.every(
+          (row) =>
+            row.explicit_requested_scope_privilege &&
+            row.explicit_requested_scope_grant_option,
+        ),
+      );
       run(
         grant({
           ...operation,
@@ -247,9 +381,106 @@ try {
         }),
       );
       count++;
+      verify(
+        inspect([operation])[0].evidence.every(
+          (row) =>
+            row.explicit_requested_scope_privilege &&
+            !row.explicit_requested_scope_grant_option,
+        ),
+      );
       run(grant({ ...operation, grantOption: false, action: "revoke" }));
       count++;
+      verify(
+        inspect([operation])[0].evidence.every(
+          (row) => !row.explicit_requested_scope_privilege,
+        ),
+      );
+      inspect([
+        { ...operation, schemas: "", public: true, grantOption: false },
+      ]);
+      verificationChecks++;
+      verify(
+        inspect([
+          { ...operation, creators: "missing_creator" },
+        ])[0].evidence.every((row) => row.status === "MISSING_CREATOR"),
+      );
+      if (object !== "schema")
+        verify(
+          inspect([
+            { ...operation, schemas: "missing_schema" },
+          ])[0].evidence.every((row) => row.status === "MISSING_SCHEMA"),
+        );
     }
+  verify(
+    inspect([
+      {
+        kind: "object",
+        object: "parameter",
+        targets: "WORK_MEM",
+        grantees: receiver,
+        privileges: ["SET"],
+      },
+    ])[0].evidence[0].status,
+    "INSPECT_EVIDENCE",
+  );
+  const globalDefault = {
+    kind: "default",
+    object: "table",
+    creators: creator,
+    schemas: "",
+    privileges: ["SELECT"],
+    grantees: receiver,
+  };
+  run(grant(globalDefault));
+  const scopedRevoke = { ...globalDefault, schemas: "s", action: "revoke" };
+  run(grant(scopedRevoke));
+  verify(
+    inspect([scopedRevoke])[0].evidence.every(
+      (row) =>
+        !row.explicit_requested_scope_privilege &&
+        row.global_or_builtin_privilege &&
+        row.combined_exact_recipient_privilege,
+    ),
+  );
+  run(grant({ ...globalDefault, action: "revoke" }));
+  verify(
+    inspect([
+      {
+        kind: "default",
+        object: "type",
+        creators: creator,
+        schemas: "s",
+        public: true,
+        privileges: ["USAGE"],
+      },
+    ])[0].evidence.every(
+      (row) =>
+        !row.explicit_requested_scope_privilege &&
+        row.global_or_builtin_privilege &&
+        row.combined_exact_recipient_privilege,
+    ),
+  );
+  const inheritedOnly = {
+    kind: "object",
+    object: "table",
+    targets: "s.existing",
+    grantees: member,
+    privileges: ["SELECT"],
+  };
+  verify(
+    inspect([inheritedOnly])[0].evidence.every(
+      (row) => !row.explicit_acl_privilege && row.effective_privilege,
+    ),
+  );
+  const unknownSignature = {
+    kind: "object",
+    object: "function",
+    targets: "s.fn",
+    argTypes: "missing_schema.missing_type",
+    grantees: member,
+    privileges: ["EXECUTE"],
+  };
+  verify(inspect([unknownSignature])[0].evidence[0].status, "MISSING_OBJECT");
   for (const option of ["ADMIN", "INHERIT", "SET"]) {
     run(
       grant({
@@ -271,6 +502,19 @@ try {
       }),
     );
     count++;
+    const membershipRow = inspect([
+      {
+        kind: "membership",
+        roles: group,
+        members: receiver,
+        action: "revoke",
+        revokeOption: option,
+      },
+    ])[0].evidence[0];
+    verify(
+      membershipRow.direct_membership &&
+        membershipRow[option.toLowerCase() + "_option"] === false,
+    );
   }
   run(
     grant({
@@ -293,6 +537,17 @@ try {
       set: false,
     }),
   );
+  verify(
+    inspect([
+      { kind: "membership", roles: multiRoles, members: receiver },
+    ])[0].evidence.every(
+      (row) =>
+        row.direct_membership &&
+        !row.admin_option &&
+        row.inherit_option &&
+        !row.set_option,
+    ),
+  );
   for (const role of multiRoles)
     check(run(`SELECT pg_has_role('${receiver}', '${role}', 'MEMBER');`));
   run(
@@ -305,6 +560,27 @@ try {
   );
   for (const role of multiRoles)
     check(run(`SELECT pg_has_role('${receiver}', '${role}', 'MEMBER');`), "f");
+  verify(
+    inspect([
+      { kind: "membership", roles: multiRoles, members: receiver },
+    ])[0].evidence.every(
+      (row) => !row.direct_membership && !row.direct_or_indirect_member,
+    ),
+  );
+  verify(
+    inspect([
+      { kind: "membership", roles: group, members: "missing_member" },
+    ])[0].evidence[0].status,
+    "MISSING_ROLE_OR_MEMBER",
+  );
+  inspect([{ kind: "membership", roles: group, members: receiver }], {
+    platform: "postgres",
+    version: 14,
+  });
+  verificationChecks++;
+  console.log(
+    `PASS: ${verificationChecks} read-only verification integration checks (before/after ACLs, grant options, defaults, roles, membership, inherited/PUBLIC access, missing resources, overloads, all scopes, unchanged catalog fingerprint).`,
+  );
   // No authority to grant a new role: transaction must roll back its created group.
   const rollbackRole = `${tag}_rollback`;
   roles.push(rollbackRole);

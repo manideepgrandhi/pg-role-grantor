@@ -105,3 +105,29 @@ Add these structured columns:
 The generated [manual FDW example](examples/fdw-manual.sql) quotes the remote column as an option string. It does not accept a raw `CREATE FOREIGN TABLE` fragment. Its types must match your real remote columns.
 
 Existing server and mapping definitions are not overwritten. Choose reviewed new object names or manage existing configuration separately. See the [FDW reference](docs/fdw.md) for role identity, TLS, credentials, collision behavior, and Aurora restrictions.
+
+## Review a writer plan before downloading
+
+1. Add the writer setup above to the script plan.
+2. Expand its item under **Permission summary**.
+3. Check the group name, database CONNECT, schema USAGE, table SELECT/INSERT/UPDATE/DELETE, and sequence USAGE.
+4. Check the future-object creators and the existing member role. On PostgreSQL 16–17, writer setup requests ADMIN false, INHERIT true, and SET false.
+5. Select **Setup SQL** and download the reviewed script.
+
+Only queued operations appear in the summary. Edits still in a form do not change an already queued request. Remove an operation and add its replacement when needed.
+
+## Inspect permissions after setup
+
+1. Keep the same plan after downloading setup SQL.
+2. Run the reviewed setup yourself in the intended database.
+3. Select **Verification SQL** and download `permission-verification.sql`.
+4. Run that SELECT-only script in the same database, with the same search path and matching major version.
+5. Compare each requested operation with its JSON evidence.
+
+For the writer group, inspect direct table ACLs and sequence USAGE. For the member application role, inspect the membership row and inherited role usage. For each creator, inspect the default-ACL scope and privileges. A configured default does not prove that a future deployment uses that creator role.
+
+After a grant-option-only revoke, inspect `explicit_acl_grant_option` separately from `explicit_acl_privilege`. Effective access can remain true through another grant path. A per-schema default REVOKE can leave `global_or_builtin_privilege` true because global defaults are additive.
+
+For FDW, inspect mapping presence and the local foreign-table inventory. Verification never queries remote data or mapping credentials. Mapping presence does not prove that the remote user, password, TLS, column mapping, or remote permissions are correct. The inventory cannot prove that every eligible remote table was imported.
+
+Missing resources produce missing-status evidence rather than a PASS. Large objects report explicit ACLs without an effective-access calculation. See the [verification limits](README.md#review-requests-and-inspect-the-result) before interpreting results.

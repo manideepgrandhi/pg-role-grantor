@@ -884,3 +884,69 @@ footer {
 #builtin-info:empty {
   display: none;
 }
+
+.permission-summary {
+  padding: 18px 22px;
+  border-top: 1px solid var(--line);
+}
+.permission-summary h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+#permission-summary {
+  margin-top: 12px;
+  max-height: 300px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+#permission-summary details {
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+#permission-summary summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+#permission-summary ul {
+  padding-left: 20px;
+}
+#permission-summary li + li {
+  margin-top: 8px;
+}
+.sql-mode {
+  margin: 0;
+  padding: 14px 22px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+.sql-mode legend {
+  float: left;
+  width: 100%;
+  padding: 0;
+  margin-bottom: 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.sql-mode label {
+  white-space: nowrap;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.sql-mode input {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.verification-help {
+  margin: 0;
+  padding: 0 22px 18px;
+}

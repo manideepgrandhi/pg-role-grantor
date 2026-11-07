@@ -170,8 +170,54 @@
             </div>
             <span id="sql-lines" class="hint"></span>
           </div>
+          <section class="permission-summary" aria-labelledby="summary-title">
+            <h3 id="summary-title">Permission summary</h3>
+            <p class="hint">
+              Requested operations, in order, not verified database state. Later
+              requests may supersede earlier ones. Expand an item for details.
+            </p>
+            <p
+              id="summary-count"
+              class="hint"
+              role="status"
+              aria-live="polite"
+            ></p>
+            <div
+              id="permission-summary"
+              tabindex="0"
+              aria-label="Queued permission requests. Scroll to review all."
+            ></div>
+          </section>
+          <fieldset class="sql-mode">
+            <legend>SQL preview</legend>
+            <label
+              ><input
+                type="radio"
+                name="sql-mode"
+                id="mode-setup"
+                value="setup"
+                checked
+              />
+              Setup SQL</label
+            >
+            <label
+              ><input
+                type="radio"
+                name="sql-mode"
+                id="mode-verification"
+                value="verification"
+              />
+              Verification SQL</label
+            >
+          </fieldset>
+          <p id="verification-help" class="hint verification-help" hidden>
+            Read-only catalog inspection after setup. No automatic PASS verdicts
+            or remote connections. Compare requested intent with the returned
+            ACL, effective access, membership, and default-ACL evidence. Catalog
+            visibility can limit results.
+          </p>
           <div class="preview-toolbar">
-            <span class="file-label">permission-plan.sql</span>
+            <span class="file-label" id="file-label">permission-plan.sql</span>
             <div>
               <button class="button small" id="copy" type="button">
                 Copy SQL</button

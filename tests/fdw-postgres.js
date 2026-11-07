@@ -6,6 +6,7 @@ import net from "node:net";
 import { randomBytes } from "node:crypto";
 import assert from "node:assert/strict";
 import { generate } from "../src/generator.js";
+import { generateVerification } from "../src/verification.js";
 import { literal as l, identifier as q } from "../src/sql-input.js";
 const bin =
   process.env.PG_BIN ||
@@ -23,6 +24,7 @@ const secrets = [
   randomBytes(32).toString("hex") + "'\\$fixture$fdw_preflight$$fdw_mapping$",
   randomBytes(32).toString("hex"),
 ];
+let verificationChecks = 0;
 let started = false,
   count = 0;
 const passwordHex = (secret) => l(Buffer.from(secret, "utf8").toString("hex"));
@@ -92,6 +94,28 @@ const base = {
   access: "writer",
 };
 const script = (op) => generate(ctx, [op]).sql;
+function inspect(op, user = "postgres") {
+  const sql = generateVerification(ctx, [op]).sql;
+  assert.ok(!/\bumoptions\b/.test(sql));
+  verificationChecks++;
+  const output = run("BEGIN READ ONLY;" + sql + "ROLLBACK;", { user });
+  for (const secret of secrets) {
+    assert.ok(
+      !output.includes(secret) &&
+        !output.includes(Buffer.from(secret).toString("hex")),
+    );
+    verificationChecks++;
+  }
+  return output
+    .split("\n")
+    .filter((line) => line.startsWith("{"))
+    .map(JSON.parse);
+}
+function verify(actual, expected = true) {
+  assert.deepEqual(actual, expected);
+  verificationChecks++;
+}
+
 function filled(text) {
   return text
     .replaceAll(
@@ -197,9 +221,38 @@ try {
     match: /wrong local database/,
   });
   run("CREATE SCHEMA imported;CREATE TABLE imported.unrelated(secret text);");
+  verify(inspect(base)[0].evidence[0].local_fdw_evidence.server_exists, false);
   const applied = run(filled(script(base)) + "SELECT current_user;");
   count++;
   check(applied.split("\n").at(-1), "postgres");
+  run(`ALTER SERVER example_import OPTIONS (SET port '1');`);
+  const inspected = inspect(base);
+  const fdw = inspected[0].evidence[0].local_fdw_evidence;
+  verify(
+    fdw.extension_installed &&
+      fdw.server_exists &&
+      fdw.wrapper === "postgres_fdw",
+  );
+  verify(fdw.mappings.every((m) => m.role_exists && m.mapping_exists));
+  verify(fdw.foreign_tables.map((t) => t.table).sort(), ["extra", "items"]);
+  verify(
+    fdw.foreign_tables
+      .find((t) => t.table === "items")
+      .columns.map((c) => c.column),
+    ["id", "description"],
+  );
+  verify(
+    inspected
+      .slice(1)
+      .flatMap((x) => x.evidence)
+      .every((row) => row.explicit_acl_privilege),
+  );
+  verify(
+    inspect(base, "local_app")[0].evidence[0].local_fdw_evidence.mappings.every(
+      (m) => m.mapping_exists,
+    ),
+  );
+  run(`ALTER SERVER example_import OPTIONS (SET port '${port}');`);
   check(run("SELECT count(*) FROM pg_foreign_table"), "2");
   check(run("SELECT current_user"), "postgres");
   check(
@@ -296,6 +349,27 @@ try {
   };
   run(filled(script(manual)));
   count++;
+  const manualEvidence = inspect(manual);
+  verify(
+    manualEvidence[0].evidence[0].local_fdw_evidence.foreign_tables[0].columns.map(
+      (c) => c.column,
+    ),
+    ["id", "description"],
+  );
+  verify(
+    manualEvidence
+      .slice(1)
+      .flatMap((x) => x.evidence)
+      .every((row) => row.explicit_acl_privilege),
+  );
+  const memberEvidence = inspect({
+    ...groupOp,
+    mappings: [{ localRole: "group_member", remoteUser: "remote_reader" }],
+  });
+  verify(
+    memberEvidence[0].evidence[0].local_fdw_evidence.mappings[0].mapping_exists,
+    false,
+  );
   check(
     run("SELECT description FROM manual_schema.items WHERE id=1", {
       user: "local_app",
@@ -384,6 +458,32 @@ try {
     }),
     "original",
   );
+  verify(
+    inspect(
+      aliased,
+    )[0].evidence[0].local_fdw_evidence.foreign_tables[0].columns.map(
+      (c) => c.column,
+    ),
+    ["id", "local_description"],
+  );
+  const punctuated = {
+    ...aliased,
+    server: "server,one",
+    localSchema: "schema.one",
+    localTable: "table,one",
+  };
+  run(
+    script(punctuated).replaceAll(
+      "E'__REPLACE_FDW_1_MAPPING_1_PASSWORD_HEX__'",
+      passwordHex(secrets[0]),
+    ),
+  );
+  verify(
+    inspect(punctuated)
+      .slice(1)
+      .flatMap((x) => x.evidence)
+      .every((row) => row.explicit_acl_privilege),
+  );
   // LIMIT TO and EXCEPT use separate schemas and servers and touch only selected imports.
   for (const [filter, tables, expected] of [
     ["limit", "items", "items"],
@@ -397,6 +497,13 @@ try {
       tables,
     };
     run(filled(script(op)));
+    verify(
+      inspect(op)[0]
+        .evidence[0].local_fdw_evidence.foreign_tables.map((t) => t.table)
+        .sort()
+        .join(","),
+      expected,
+    );
     count++;
     check(
       run(
@@ -447,6 +554,9 @@ try {
       user: "percent%role",
     }),
     "original",
+  );
+  console.log(
+    `PASS: ${verificationChecks} FDW read-only catalog inspection checks (before/after import/manual setup, inaccessible remote port, mapping presence, local columns and grants, no credential output).`,
   );
   console.log(
     `PASS: ${count} real FDW integration checks. Fresh isolated local server, loopback SCRAM remote authentication, import/manual read-write, per-user mappings, group-mapping caveat, guards, and collision rollback. Ephemeral credentials never entered source or artifacts; no external databases.`,

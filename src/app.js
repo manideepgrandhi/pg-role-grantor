@@ -2,6 +2,8 @@ import { esc, field, select, check, checkboxGroup } from "./form-fields.js";
 import { renderFdwForm, readFdwOperation } from "./fdw-form.js";
 import { catalog, predefined } from "./catalog.js";
 import { generate } from "./generator.js";
+import { summarize } from "./plan-review.js";
+import { generateVerification } from "./verification.js";
 import { names } from "./sql-input.js";
 const $ = (id) => document.getElementById(id);
 const context = () => ({
@@ -11,7 +13,8 @@ const context = () => ({
 let tab = "profile",
   profile = "writer",
   plan = [],
-  latest = "";
+  latest = "",
+  sqlMode = "setup";
 const formDrafts = new Map();
 const listHint =
   "Comma-separated or one per line. Enter names without SQL quotes. Case is preserved.";
@@ -387,10 +390,33 @@ function refresh() {
   latest = "";
   try {
     const result = generate(context(), plan);
-    latest = result.sql;
-    $("sql-code").innerHTML = highlight(result.sql);
-    $("sql-lines").textContent =
-      `${result.sql.trimEnd().split("\n").length} lines`;
+    const summary = summarize(context(), plan);
+    $("summary-count").textContent =
+      `${plan.length} queued request${plan.length === 1 ? "" : "s"}. Scroll within the summary to review all.`;
+    $("permission-summary").replaceChildren(
+      ...summary.map((item) => {
+        const details = document.createElement("details"),
+          heading = document.createElement("summary"),
+          list = document.createElement("ul");
+        heading.textContent = `${item.number}. ${item.title}`;
+        item.details.forEach((text) => {
+          const li = document.createElement("li");
+          li.textContent = text;
+          list.append(li);
+        });
+        details.append(heading, list);
+        return details;
+      }),
+    );
+    if (!plan.length)
+      $("permission-summary").textContent =
+        "No queued operations. Form drafts are not included.";
+    latest =
+      sqlMode === "setup"
+        ? result.sql
+        : generateVerification(context(), plan).sql;
+    $("sql-code").innerHTML = highlight(latest);
+    $("sql-lines").textContent = `${latest.trimEnd().split("\n").length} lines`;
     $("warnings").replaceChildren(
       ...result.warnings.map((w) => {
         const li = document.createElement("li");
@@ -402,9 +428,25 @@ function refresh() {
     $("plan-error").hidden = false;
     $("plan-error").textContent =
       `The plan is incompatible with this target: ${e.message} Remove the incompatible operation or change the engine version.`;
+    $("summary-count").textContent = "";
+    $("permission-summary").textContent =
+      "Summary unavailable: this plan is incompatible with the selected target. No export is enabled.";
     $("sql-code").textContent = "-- Export disabled until the plan is valid.";
     $("sql-lines").textContent = "";
   }
+  $("file-label").textContent =
+    sqlMode === "setup" ? "permission-plan.sql" : "permission-verification.sql";
+  $("verification-help").hidden = sqlMode !== "verification";
+  $("sql").setAttribute(
+    "aria-label",
+    sqlMode === "setup"
+      ? "Setup SQL script"
+      : "Read-only verification SQL script",
+  );
+  $("copy").textContent =
+    sqlMode === "setup" ? "Copy setup SQL" : "Copy verification SQL";
+  $("copy").setAttribute("aria-label", `Copy ${sqlMode} SQL`);
+  $("download").setAttribute("aria-label", `Download ${sqlMode} SQL`);
   $("copy").disabled = !latest || !plan.length;
   $("download").disabled = !latest || !plan.length;
   const rows = Object.values(catalog(context().version))
@@ -497,6 +539,16 @@ $("clear").addEventListener("click", () => {
   refresh();
   $("status").textContent = "Script plan cleared.";
 });
+document.querySelectorAll('[name="sql-mode"]').forEach((input) =>
+  input.addEventListener("change", () => {
+    sqlMode = input.value;
+    refresh();
+    $("status").textContent =
+      sqlMode === "setup"
+        ? "Setup SQL selected."
+        : "Read-only verification SQL selected. Run this yourself after setup.";
+  }),
+);
 $("copy").addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(latest);
@@ -513,7 +565,8 @@ $("download").addEventListener("click", () => {
     ),
     a = document.createElement("a");
   a.href = url;
-  a.download = "permission-plan.sql";
+  a.download =
+    sqlMode === "setup" ? "permission-plan.sql" : "permission-verification.sql";
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   $("status").textContent = "SQL file downloaded.";
