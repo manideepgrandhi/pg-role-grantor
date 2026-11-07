@@ -6,13 +6,13 @@ Every name in this file and the generated examples is a placeholder. Existing da
 
 In **Access setup**, select **Read + write** and enter:
 
-| Field | Example value |
-| --- | --- |
-| Group role | `example_writer` |
-| Target database | `example_db` |
-| Schemas | `example_schema` |
-| Future object creators | `example_owner` |
-| Assign to existing users | `app` |
+| Field                    | Example value    |
+| ------------------------ | ---------------- |
+| Group role               | `example_writer` |
+| Target database          | `example_db`     |
+| Schemas                  | `example_schema` |
+| Future object creators   | `example_owner`  |
+| Assign to existing users | `app`            |
 
 Here `app` is an example existing login, not an account created by the generator. Add the setup and download the script. The script creates `example_writer` if missing, grants SELECT, INSERT, UPDATE, DELETE and sequence USAGE, sets defaults for objects created by `example_owner`, and assigns the group to `app`.
 

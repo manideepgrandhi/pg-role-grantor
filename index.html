@@ -1,15 +1,238 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#f7f8fa"><meta name="description" content="Build PostgreSQL and Aurora PostgreSQL role and privilege scripts locally. No database connection required."><title>PG role grantor · Permission scripts</title><link rel="icon" href="./icon.svg" type="image/svg+xml"><link rel="stylesheet" href="./style.css"><script type="module" src="./src/app.js"></script></head>
-<body>
-<header class="site-header"><a class="brand" href="./"><span class="brand-icon" aria-hidden="true">pg</span>role grantor</a><span class="privacy"><span class="dot"></span>Local generation. No connection.</span></header>
-<main>
-<section class="intro"><div><p class="eyebrow">POSTGRESQL PERMISSION WORKSPACE</p><h1>Precise permissions.<br><span>One reviewed script.</span></h1><p class="lede">Create roles, grant access, and configure future objects.<br class="desktop-break"> Your SQL stays in your browser. You decide when to run it.</p></div><div class="target card"><h2>Target engine</h2><div class="engine-grid"><label for="platform">Platform<select id="platform"><option value="postgres">PostgreSQL</option><option value="aurora">Aurora PostgreSQL</option></select></label><label for="version">Major version<select id="version"><option>17</option><option>16</option><option>15</option><option>14</option></select></label></div><p class="hint">Version-aware SQL · Upstream majors 14–17<br> Aurora availability depends on your engine release.</p></div></section>
-<div class="workspace"><section class="builder card" aria-labelledby="builder-title"><div class="section-heading"><div><p class="eyebrow">01 / CONFIGURE</p><h2 id="builder-title">Build your access plan</h2></div><span class="badge">SQL only</span></div>
-<div class="tabs" role="tablist" aria-label="Operation type"><button id="tab-profile" role="tab" aria-controls="operation-panel" aria-selected="true" data-tab="profile">Access setup</button><button id="tab-object" role="tab" aria-controls="operation-panel" aria-selected="false" tabindex="-1" data-tab="object">Object grants</button><button id="tab-default" role="tab" aria-controls="operation-panel" aria-selected="false" tabindex="-1" data-tab="default">Defaults</button><button id="tab-membership" role="tab" aria-controls="operation-panel" aria-selected="false" tabindex="-1" data-tab="membership">Membership</button><button id="tab-group" role="tab" aria-controls="operation-panel" aria-selected="false" tabindex="-1" data-tab="group">Create role</button></div>
-<form id="operation-form" novalidate><div id="operation-panel" role="tabpanel" aria-labelledby="tab-profile"></div><p class="form-error" id="form-error" role="alert" hidden></p><div class="form-actions"><button class="button primary" type="submit">Add to script <span aria-hidden="true">＋</span></button><span class="hint">Review the plan before exporting.</span></div></form>
-<div class="plan"><div class="plan-heading"><h3>Script plan <span id="plan-count" class="count">0</span></h3><button class="text-button" id="clear" type="button">Clear plan</button></div><ol id="plan-list"></ol><p id="empty-plan" class="hint">Add an operation. Combine multiple grants in one script.</p></div></section>
-<section class="preview card" aria-labelledby="preview-title"><div class="section-heading"><div><p class="eyebrow">02 / REVIEW & EXPORT</p><h2 id="preview-title">Generated SQL</h2></div><span id="sql-lines" class="hint"></span></div><div class="preview-toolbar"><span class="file-label">permission-plan.sql</span><div><button class="button small" id="copy" type="button">Copy SQL</button><button class="button small" id="download" type="button">Download .sql</button></div></div><pre id="sql" tabindex="0" aria-label="Generated SQL script"><code id="sql-code"></code></pre><div class="preview-footer"><span class="dot"></span><span>Standalone SQL. No wrapper procedure required.</span></div><p id="status" role="status" aria-live="polite"></p></section></div>
-<section class="review card" aria-labelledby="review-title"><div class="review-title"><span class="warning-icon" aria-hidden="true">!</span><div><h2 id="review-title">Before you run this</h2><p class="hint">The generator validates syntax choices, not your database state.</p></div></div><p id="plan-error" role="alert" class="form-error" hidden></p><ul id="warnings"></ul></section>
-<details class="reference card"><summary>Permission coverage & boundaries <span class="hint">All object GRANT privileges for supported majors</span></summary><div class="reference-content"><p>Database, schema, table, view, foreign table, column, sequence, function, procedure, routine, type, domain, language, foreign data wrapper, foreign server, tablespace, large object, and configuration parameter privileges. <strong>MAINTAIN</strong> requires 17. Parameter privileges require 15 or later.</p><p>Default privileges cover future tables, sequences, routines, types, and schemas by creator. Schema defaults are global within a database. Predefined PostgreSQL roles are separate from scoped access profiles.</p><p>Ownership, ALTER/DROP authority, elevated role attributes, RLS policies, passwords, and AWS IAM are not GRANT privileges and are not configured here. Aurora host-level operations may be unavailable even when SQL syntax exists. No database connection, account sign-in, execution, analytics, or form-data storage.</p><div class="table-wrap"><table><caption>Privileges for the selected major version</caption><thead><tr><th scope="col">Object</th><th scope="col">Permissions</th><th scope="col">Defaults</th></tr></thead><tbody id="coverage"></tbody></table></div><p id="source-links"></p></div></details>
-</main><footer><span>PG role grantor <span class="footer-dot">·</span> Independent, browser-only tool</span><span id="offline-status">Offline-ready after the first visit</span></footer>
-</body></html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f7f8fa" />
+    <meta
+      name="description"
+      content="Build PostgreSQL and Aurora PostgreSQL role and privilege scripts locally. No database connection required."
+    />
+    <title>PG role grantor · Permission scripts</title>
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./style.css" />
+    <script type="module" src="./src/app.js"></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="./"
+        ><span class="brand-icon" aria-hidden="true">pg</span>role grantor</a
+      ><span class="privacy"
+        ><span class="dot"></span>Local generation. No connection.</span
+      >
+    </header>
+    <main>
+      <section class="intro">
+        <div>
+          <p class="eyebrow">POSTGRESQL PERMISSION WORKSPACE</p>
+          <h1>Precise permissions.<br /><span>One reviewed script.</span></h1>
+          <p class="lede">
+            Create roles, grant access, and configure future objects.<br
+              class="desktop-break"
+            />
+            Your SQL stays in your browser. You decide when to run it.
+          </p>
+        </div>
+        <div class="target card">
+          <h2>Target engine</h2>
+          <div class="engine-grid">
+            <label for="platform"
+              >Platform<select id="platform">
+                <option value="postgres">PostgreSQL</option>
+                <option value="aurora">Aurora PostgreSQL</option>
+              </select></label
+            ><label for="version"
+              >Major version<select id="version">
+                <option>17</option>
+                <option>16</option>
+                <option>15</option>
+                <option>14</option>
+              </select></label
+            >
+          </div>
+          <p class="hint">
+            Version-aware SQL · Upstream majors 14–17<br />
+            Aurora availability depends on your engine release.
+          </p>
+        </div>
+      </section>
+      <div class="workspace">
+        <section class="builder card" aria-labelledby="builder-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">01 / CONFIGURE</p>
+              <h2 id="builder-title">Build your access plan</h2>
+            </div>
+            <span class="badge">SQL only</span>
+          </div>
+          <div class="tabs" role="tablist" aria-label="Operation type">
+            <button
+              id="tab-profile"
+              role="tab"
+              aria-controls="operation-panel"
+              aria-selected="true"
+              data-tab="profile"
+            >
+              Access setup</button
+            ><button
+              id="tab-object"
+              role="tab"
+              aria-controls="operation-panel"
+              aria-selected="false"
+              tabindex="-1"
+              data-tab="object"
+            >
+              Object grants</button
+            ><button
+              id="tab-default"
+              role="tab"
+              aria-controls="operation-panel"
+              aria-selected="false"
+              tabindex="-1"
+              data-tab="default"
+            >
+              Defaults</button
+            ><button
+              id="tab-membership"
+              role="tab"
+              aria-controls="operation-panel"
+              aria-selected="false"
+              tabindex="-1"
+              data-tab="membership"
+            >
+              Membership</button
+            ><button
+              id="tab-group"
+              role="tab"
+              aria-controls="operation-panel"
+              aria-selected="false"
+              tabindex="-1"
+              data-tab="group"
+            >
+              Create role
+            </button>
+          </div>
+          <form id="operation-form" novalidate>
+            <div
+              id="operation-panel"
+              role="tabpanel"
+              aria-labelledby="tab-profile"
+            ></div>
+            <p class="form-error" id="form-error" role="alert" hidden></p>
+            <div class="form-actions">
+              <button class="button primary" type="submit">
+                Add to script <span aria-hidden="true">＋</span></button
+              ><span class="hint">Review the plan before exporting.</span>
+            </div>
+          </form>
+          <div class="plan">
+            <div class="plan-heading">
+              <h3>Script plan <span id="plan-count" class="count">0</span></h3>
+              <button class="text-button" id="clear" type="button">
+                Clear plan
+              </button>
+            </div>
+            <ol id="plan-list"></ol>
+            <p id="empty-plan" class="hint">
+              Add an operation. Combine multiple grants in one script.
+            </p>
+          </div>
+        </section>
+        <section class="preview card" aria-labelledby="preview-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">02 / REVIEW & EXPORT</p>
+              <h2 id="preview-title">Generated SQL</h2>
+            </div>
+            <span id="sql-lines" class="hint"></span>
+          </div>
+          <div class="preview-toolbar">
+            <span class="file-label">permission-plan.sql</span>
+            <div>
+              <button class="button small" id="copy" type="button">
+                Copy SQL</button
+              ><button class="button small" id="download" type="button">
+                Download .sql
+              </button>
+            </div>
+          </div>
+          <pre
+            id="sql"
+            tabindex="0"
+            aria-label="Generated SQL script"
+          ><code id="sql-code"></code></pre>
+          <div class="preview-footer">
+            <span class="dot"></span
+            ><span>Standalone SQL. No wrapper procedure required.</span>
+          </div>
+          <p id="status" role="status" aria-live="polite"></p>
+        </section>
+      </div>
+      <section class="review card" aria-labelledby="review-title">
+        <div class="review-title">
+          <span class="warning-icon" aria-hidden="true">!</span>
+          <div>
+            <h2 id="review-title">Before you run this</h2>
+            <p class="hint">
+              The generator validates syntax choices, not your database state.
+            </p>
+          </div>
+        </div>
+        <p id="plan-error" role="alert" class="form-error" hidden></p>
+        <ul id="warnings"></ul>
+      </section>
+      <details class="reference card">
+        <summary>
+          Permission coverage & boundaries
+          <span class="hint"
+            >All object GRANT privileges for supported majors</span
+          >
+        </summary>
+        <div class="reference-content">
+          <p>
+            Database, schema, table, view, foreign table, column, sequence,
+            function, procedure, routine, type, domain, language, foreign data
+            wrapper, foreign server, tablespace, large object, and configuration
+            parameter privileges. <strong>MAINTAIN</strong> requires 17.
+            Parameter privileges require 15 or later.
+          </p>
+          <p>
+            Default privileges cover future tables, sequences, routines, types,
+            and schemas by creator. Schema defaults are global within a
+            database. Predefined PostgreSQL roles are separate from scoped
+            access profiles.
+          </p>
+          <p>
+            Ownership, ALTER/DROP authority, elevated role attributes, RLS
+            policies, passwords, and AWS IAM are not GRANT privileges and are
+            not configured here. Aurora host-level operations may be unavailable
+            even when SQL syntax exists. No database connection, account
+            sign-in, execution, analytics, or form-data storage.
+          </p>
+          <div class="table-wrap">
+            <table>
+              <caption>
+                Privileges for the selected major version
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Object</th>
+                  <th scope="col">Permissions</th>
+                  <th scope="col">Defaults</th>
+                </tr>
+              </thead>
+              <tbody id="coverage"></tbody>
+            </table>
+          </div>
+          <p id="source-links"></p>
+        </div>
+      </details>
+    </main>
+    <footer>
+      <span
+        >PG role grantor <span class="footer-dot">·</span> Independent,
+        browser-only tool</span
+      ><span id="offline-status">Offline-ready after the first visit</span>
+    </footer>
+  </body>
+</html>

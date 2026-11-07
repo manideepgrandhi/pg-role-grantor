@@ -32,21 +32,21 @@ Changing the platform or major version revalidates the entire plan. Export is di
 
 The catalog supports upstream PostgreSQL majors **14, 15, 16, and 17**. It does not claim support for 18 or later. Aurora mode uses the selected upstream major's SQL grammar and displays managed-service restrictions. It does not certify every Aurora engine minor release or regional availability.
 
-| Object level | Grantable permissions |
-| --- | --- |
-| Database | CONNECT, CREATE, TEMPORARY |
-| Schema | USAGE, CREATE |
-| Table, view, foreign table | SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER; MAINTAIN on 17 |
-| Column | SELECT, INSERT, UPDATE, REFERENCES |
-| Sequence | USAGE, SELECT, UPDATE |
-| Function, procedure, routine | EXECUTE |
-| Type, domain | USAGE |
-| Language | USAGE |
-| Foreign data wrapper | USAGE |
-| Foreign server | USAGE |
-| Tablespace | CREATE |
-| Large object | SELECT, UPDATE |
-| Configuration parameter | SET, ALTER SYSTEM on 15 and later |
+| Object level                 | Grantable permissions                                                         |
+| ---------------------------- | ----------------------------------------------------------------------------- |
+| Database                     | CONNECT, CREATE, TEMPORARY                                                    |
+| Schema                       | USAGE, CREATE                                                                 |
+| Table, view, foreign table   | SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER; MAINTAIN on 17 |
+| Column                       | SELECT, INSERT, UPDATE, REFERENCES                                            |
+| Sequence                     | USAGE, SELECT, UPDATE                                                         |
+| Function, procedure, routine | EXECUTE                                                                       |
+| Type, domain                 | USAGE                                                                         |
+| Language                     | USAGE                                                                         |
+| Foreign data wrapper         | USAGE                                                                         |
+| Foreign server               | USAGE                                                                         |
+| Tablespace                   | CREATE                                                                        |
+| Large object                 | SELECT, UPDATE                                                                |
+| Configuration parameter      | SET, ALTER SYSTEM on 15 and later                                             |
 
 Each object category supports GRANT, REVOKE, ALL PRIVILEGES, grant options, grant-option-only revocation, and RESTRICT or CASCADE where the SQL grammar permits them. TEMPORARY is the canonical spelling of TEMP.
 

@@ -1,5 +1,13 @@
 {
-  "name": "pg-role-grantor", "version": "1.0.0", "private": true, "type": "module",
-  "scripts": {"test": "node --test tests/generator.test.js", "serve": "python3 -m http.server 8080 --bind 127.0.0.1", "test:postgres": "node tests/postgres.js", "test:ui": "node tests/browser.cjs"},
+  "name": "pg-role-grantor",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/generator.test.js",
+    "serve": "python3 -m http.server 8080 --bind 127.0.0.1",
+    "test:postgres": "node tests/postgres.js",
+    "test:ui": "node tests/browser.cjs"
+  },
   "description": "Offline PostgreSQL and Aurora PostgreSQL privilege script generator"
 }
