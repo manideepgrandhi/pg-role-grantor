@@ -292,7 +292,7 @@ const path = require("node:path");
     );
     check(
       await page.evaluate(async () =>
-        (await caches.keys()).includes("pg-role-grantor-v8"),
+        (await caches.keys()).includes("pg-role-grantor-v9"),
       ),
     );
     await page.setOfflineMode(true);
