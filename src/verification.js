@@ -227,7 +227,9 @@ function defaultEvidence(ctx, op) {
     schema: ["n", "n"],
   };
   const [code, baseline] = codes[op.object];
-  const schemas = names(op.schemas, true);
+  const schemas = names(op.schemas, true),
+    // Blank creators mean the executing role, so inspect CURRENT_USER.
+    creators = names(op.creators, true);
   const perms = op.privileges.includes("ALL PRIVILEGES")
     ? catalog(ctx.version)[op.object].privileges
     : op.privileges;
@@ -243,7 +245,7 @@ SELECT wanted.name AS creator, r.recipient, scope.name AS requested_schema, CASE
  ${has(global)} AS global_or_builtin_privilege, ${has(global, true)} AS global_or_builtin_grant_option,
  (${has(global)} OR ${has("d.defaclacl")}) AS combined_exact_recipient_privilege,
  (${has(global, true)} OR ${has("d.defaclacl", true)}) AS combined_exact_recipient_grant_option
-FROM (VALUES ${values(names(op.creators))}) wanted(name)
+FROM ${creators.length ? `(VALUES ${values(creators)})` : "(VALUES (CURRENT_USER::text))"} wanted(name)
 LEFT JOIN pg_catalog.pg_roles creator ON creator.rolname=wanted.name
 CROSS JOIN recipients r CROSS JOIN (VALUES ${values(schemas.length ? schemas : [""])}) scope(name)
 LEFT JOIN pg_catalog.pg_namespace n ON n.nspname=scope.name

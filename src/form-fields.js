@@ -5,11 +5,20 @@ export const esc = (value) =>
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
-export function field(name, label, value = "", hint = "", type = "input") {
+// Optional fields start blank and show `placeholder` instead of an example value.
+export function field(
+  name,
+  label,
+  value = "",
+  hint = "",
+  type = "input",
+  placeholder = "",
+) {
+  const hold = placeholder ? ` placeholder="${esc(placeholder)}"` : "";
   const control =
     type === "textarea"
-      ? `<textarea id="${name}" name="${name}" spellcheck="false">${esc(value)}</textarea>`
-      : `<input id="${name}" name="${name}" value="${esc(value)}" autocomplete="off" spellcheck="false">`;
+      ? `<textarea id="${name}" name="${name}" spellcheck="false"${hold}>${esc(value)}</textarea>`
+      : `<input id="${name}" name="${name}" value="${esc(value)}" autocomplete="off" spellcheck="false"${hold}>`;
   return `<div class="field"><label for="${name}">${label}</label>${control}${hint ? `<p class="hint" id="${name}-hint">${hint}</p>` : ""}</div>`;
 }
 export function select(name, label, options, value, hint = "") {

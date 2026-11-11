@@ -1,4 +1,4 @@
-import { generate } from "./generator.js";
+import { generate, splitObjects, profileGrants } from "./generator.js";
 import { names, identifier, argumentType } from "./sql-input.js";
 import { catalog } from "./catalog.js";
 
@@ -7,19 +7,7 @@ export function expandOperation(ctx, op) {
   if (op.kind === "profile") {
     const base = { action: "grant", grantees: [op.group] };
     const schemas = names(op.schemas),
-      creators = names(op.creators);
-    const grants =
-      op.profile === "executor"
-        ? [["routine", ["EXECUTE"]]]
-        : [
-            [
-              "table",
-              op.profile === "reader"
-                ? ["SELECT"]
-                : ["SELECT", "INSERT", "UPDATE", "DELETE"],
-            ],
-            ...(op.profile === "writer" ? [["sequence", ["USAGE"]]] : []),
-          ];
+      creators = names(op.creators, true);
     return [
       { kind: "group", group: op.group },
       {
@@ -36,10 +24,11 @@ export function expandOperation(ctx, op) {
         targets: schemas,
         privileges: ["USAGE"],
       },
-      ...grants.flatMap(([object, privileges]) => [
-        { ...base, kind: "object", object, privileges, scope: "all", schemas },
-        { ...base, kind: "default", object, privileges, schemas, creators },
-      ]),
+      ...profileGrants(op.profile).map(([kind, object, privileges]) =>
+        kind === "object"
+          ? { ...base, kind, object, privileges, scope: "all", schemas }
+          : { ...base, kind, object, privileges, schemas, creators },
+      ),
       ...(names(op.members, true).length
         ? [
             {
@@ -140,6 +129,8 @@ export function expandOperation(ctx, op) {
           ]),
     ];
   }
+  if (op.kind === "object" || op.kind === "default")
+    return splitObjects(ctx, op);
   return [op];
 }
 export function describeOperation(ctx, op) {
@@ -170,7 +161,7 @@ export function describeOperation(ctx, op) {
       : "");
   const target =
     op.kind === "default"
-      ? `future ${entry.defaults}; creators ${list(op.creators)}; ${list(op.schemas) ? "schemas " + list(op.schemas) : "database-global"}`
+      ? `future ${entry.defaults}; ${list(op.creators) ? "creators " + list(op.creators) : "no creators listed, so only objects created by the role that runs the script (CURRENT_USER)"}; ${list(op.schemas) ? "schemas " + list(op.schemas) : "database-global"}`
       : op.scope === "all"
         ? `${op.importServer ? "all local foreign tables" : "all existing " + entry.all} in schemas ${list(op.schemas)}${op.importServer ? " on foreign server " + op.importServer : ""}`
         : `${entry.keyword} ${op.targetParts ? op.targetParts.map((parts) => parts.map(identifier).join(".")).join(", ") : list(op.targets)}${
@@ -186,6 +177,12 @@ export function describeOperation(ctx, op) {
           }`;
   return `${action} ${op.optionOnly ? "grant option only for " : ""}${privileges} on ${target} ${action === "GRANT" ? "to" : "from"} ${op.public ? "PUBLIC (every role)" : list(op.grantees)}${op.grantOption ? "; WITH GRANT OPTION" : ""}${action === "REVOKE" ? "; " + (op.behavior || "RESTRICT") : ""}`;
 }
+function groupTitle(ctx, op) {
+  const entries = catalog(ctx.version),
+    revoke = op.action === "revoke";
+  const types = op.objects.map((key) => entries[key].label).join(" + ");
+  return `${revoke ? "REVOKE" : "GRANT"} ${op.privileges.join(", ")} on ${op.kind === "default" ? "future" : "existing"} ${types} ${revoke ? "from" : "to"} ${op.public ? "PUBLIC (every role)" : names(op.grantees).join(", ")} (applied per type where supported)`;
+}
 export function summarize(ctx, operations) {
   generate(ctx, operations);
   return operations.map((op, index) => {
@@ -196,8 +193,10 @@ export function summarize(ctx, operations) {
       number: index + 1,
       title:
         op.kind === "profile"
-          ? `${op.profile === "writer" ? "Read + write" : op.profile === "reader" ? "Reader" : "Routine executor"} profile → ${op.group}; database ${op.database}; schemas ${names(op.schemas).join(", ")}`
-          : details[0],
+          ? `${op.profile === "writer" ? "Read + write" : op.profile === "reader" ? "Reader" : "Routine executor"} profile → ${op.group}; database ${op.database}; schemas ${names(op.schemas).join(", ")}${names(op.creators, true).length ? "" : "; future defaults only for objects the executing role creates"}`
+          : op.objects?.length > 1
+            ? groupTitle(ctx, op)
+            : details[0],
       details,
     };
   });

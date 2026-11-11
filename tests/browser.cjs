@@ -34,16 +34,69 @@ const path = require("node:path");
         "clipboard-sanitized-write",
       ]);
     await page.goto(url, { waitUntil: "networkidle0" });
+    const sql = () => page.$eval("#sql-code", (e) => e.textContent);
+    const add = () => page.click("button[type=submit]");
+    const operation = (value) => page.select("#operation", value);
+    // Opens the More disclosure if needed, clears other types, and checks one.
+    const onlyType = async (key) => {
+      await page.$eval("#more-types", (e) => (e.open = true));
+      for (const el of await page.$$("[name=objtype]:checked"))
+        await el.click();
+      await page.click("#type-" + key);
+    };
     check(await page.title(), "PG role grantor · Permission scripts");
+    check(
+      await page.$eval("h1", (e) => e.textContent),
+      "Build a permission script",
+    );
+    check(
+      await page.$$eval("[role=tab],.tabs,.eyebrow,.badge", (e) => e.length),
+      0,
+    );
+    check(
+      JSON.stringify(
+        await page.$$eval("#operation option", (els) =>
+          els.map((e) => [e.value, e.textContent]),
+        ),
+      ),
+      JSON.stringify([
+        ["profile", "Access setup"],
+        ["grants", "Grants"],
+        ["membership", "Membership"],
+        ["group", "Create role"],
+        ["fdw", "FDW setup"],
+      ]),
+    );
+    check(await page.$eval("#platform", (e) => e.value), "postgres");
+    check(await page.$eval("#version", (e) => e.value), "17");
     check(await page.$eval("#download", (b) => b.disabled));
-    await page.click("button[type=submit]");
+    // Optional fields start blank with a placeholder.
+    for (const [id, placeholder] of [
+      ["creators", "example_owner"],
+      ["members", "example_app"],
+    ]) {
+      check(await page.$eval("#" + id, (e) => e.value), "");
+      check(await page.$eval("#" + id, (e) => e.placeholder), placeholder);
+    }
+    await add();
     await page.waitForFunction(
       () => document.querySelector("#plan-count").textContent === "1",
     );
-    const initial = await page.$eval("#sql-code", (e) => e.textContent);
+    const initial = await sql();
     check(initial.includes('CREATE ROLE "example_writer" NOLOGIN'));
-    check(initial.includes("WITH ADMIN FALSE, INHERIT TRUE, SET FALSE"));
-    check(initial.includes("GRANT USAGE ON ALL SEQUENCES"));
+    check(
+      initial.includes(
+        'GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON ALL TABLES IN SCHEMA "example_schema"',
+      ),
+    );
+    check(initial.includes("GRANT SELECT, USAGE ON ALL SEQUENCES"));
+    check(initial.includes("GRANT EXECUTE ON ALL FUNCTIONS"));
+    check(initial.includes("GRANT USAGE ON TYPES"));
+    check(initial.includes("FOR ROLE"), false);
+    check(
+      initial.includes('ALTER DEFAULT PRIVILEGES IN SCHEMA "example_schema"'),
+    );
+    check(initial.includes("WITH ADMIN"), false);
     await page.click("#copy");
     await page.waitForFunction(() =>
       document.querySelector("#status").textContent.includes("copied"),
@@ -54,65 +107,75 @@ const path = require("node:path");
       behavior: "allow",
       downloadPath: artifacts,
     });
+    const target = path.join(artifacts, "permission-plan.sql");
+    if (fs.existsSync(target)) fs.unlinkSync(target);
     await page.click("#download");
-    for (
-      let i = 0;
-      i < 40 && !fs.existsSync(path.join(artifacts, "permission-plan.sql"));
-      i++
-    )
+    for (let i = 0; i < 40 && !fs.existsSync(target); i++)
       await new Promise((r) => setTimeout(r, 100));
-    check(
-      fs.readFileSync(path.join(artifacts, "permission-plan.sql"), "utf8"),
-      initial,
-    );
+    check(fs.readFileSync(target, "utf8"), initial);
     await page.evaluate(() => scrollTo(0, 0));
     await page.screenshot({
       path: path.join(artifacts, "desktop.png"),
       fullPage: true,
     });
-    await page.click("#tab-object");
-    await page.select("#object", "column");
+    await operation("grants");
+    check(
+      await page.$eval("#grant-mode-object", (e) =>
+        e.getAttribute("aria-pressed"),
+      ),
+      "true",
+    );
+    await onlyType("column");
     check(
       await page.$eval("#permissions", (e) =>
         e.textContent.includes("REFERENCES"),
       ),
     );
-    await page.click("button[type=submit]");
+    await add();
     check(await page.$eval("#plan-count", (e) => e.textContent), "2");
-    await page.select("#object", "procedure");
-    await page.click('[name=privilege][value="EXECUTE"]');
-    await page.click("button[type=submit]");
+    await onlyType("procedure");
+    // After an empty type set, the first permission starts checked again.
     check(
-      (await page.$eval("#sql-code", (e) => e.textContent)).includes(
+      await page.$eval('[name=privilege][value="EXECUTE"]', (e) => e.checked),
+    );
+    await add();
+    check(
+      (await sql()).includes(
         'ON PROCEDURE "example_schema"."example_routine"(integer, text)',
       ),
     );
-    await page.select("#object", "parameter");
-    await page.click('[name=privilege][value="SET"]');
-    await page.click("button[type=submit]");
+    await onlyType("parameter");
+    check(await page.$eval('[name=privilege][value="SET"]', (e) => e.checked));
+    await add();
     check(await page.$eval("#plan-count", (e) => e.textContent), "4");
     await page.select("#version", "14");
     check(await page.$eval("#download", (b) => b.disabled));
     check(await page.$eval("#plan-error", (e) => !e.hidden));
     await page.select("#version", "17");
     check(await page.$eval("#download", (b) => !b.disabled));
-    await page.click("#tab-default");
-    await page.select("#object", "schema");
-    await page.click('[name=privilege][value="USAGE"]');
-    check(await page.$eval("#schemas", (e) => e.value), "");
-    await page.click("button[type=submit]");
+    await page.click("#grant-mode-default");
+    await onlyType("schema");
     check(
-      (await page.$eval("#sql-code", (e) => e.textContent)).includes(
-        "ON SCHEMAS TO",
+      await page.$eval('[name=privilege][value="USAGE"]', (e) => e.checked),
+    );
+    check(await page.$eval("#schemas", (e) => e.value), "");
+    check(await page.$eval("#creators", (e) => e.value), "");
+    await add();
+    check(
+      (await sql()).includes(
+        "ALTER DEFAULT PRIVILEGES\n  GRANT USAGE ON SCHEMAS TO",
       ),
     );
-    await page.click("#tab-membership");
+    await operation("membership");
+    await page.click("#builtin-panel summary");
     await page.click('[name=builtin][value="pg_monitor"]');
     check(await page.$eval("#roles", (e) => e.value), "");
-    await page.click("button[type=submit]");
+    check(await page.$eval("#roles", (e) => e.placeholder), "example_writer");
+    await add();
     check(await page.$eval("#plan-count", (e) => e.textContent), "6");
     await page.select("#platform", "aurora");
-    await page.click("#tab-membership");
+    check(await page.$eval("#operation", (e) => e.value), "membership");
+    await page.click("#builtin-panel summary");
     check(
       await page.$eval(
         '[name=builtin][value="pg_execute_server_program"]',
@@ -122,28 +185,30 @@ const path = require("node:path");
     await page.click('[name=builtin][value="pg_monitor"]');
     await page.select("#action", "revoke");
     await page.select("#revokeOption", "SET");
-    await page.click("button[type=submit]");
-    check(
-      (await page.$eval("#sql-code", (e) => e.textContent)).includes(
-        "REVOKE SET OPTION FOR",
-      ),
-    );
-    await page.click("#tab-object");
+    await add();
+    check((await sql()).includes("REVOKE SET OPTION FOR"));
+    await operation("grants");
+    await page.click("#grant-mode-object");
     await page.$eval("#targets", (e) => (e.value = ""));
-    await page.click("button[type=submit]");
+    await add();
     check(await page.$eval("#form-error", (e) => !e.hidden));
     page.once("dialog", (dialog) => dialog.accept());
     await page.click("#clear");
     check(await page.$eval("#plan-count", (e) => e.textContent), "0");
-    // Validate keyboard tabs and mobile horizontal overflow.
-    await page.focus("#tab-profile");
-    await page.keyboard.press("ArrowRight");
+    // Keyboard: the toggle bar is a pair of buttons.
+    await page.focus("#grant-mode-default");
+    await page.keyboard.press("Enter");
     check(
-      await page.$eval("#tab-object", (e) => e.getAttribute("aria-selected")),
+      await page.$eval("#grant-mode-default", (e) =>
+        e.getAttribute("aria-pressed"),
+      ),
       "true",
     );
-    await page.click("#tab-profile");
-    await page.click("button[type=submit]");
+    await page.focus("#operation");
+    await page.keyboard.press("ArrowUp");
+    check(await page.$eval("#operation", (e) => e.value), "profile");
+    check(await page.$("#group").then(Boolean));
+    await add();
     await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
     check(
       await page.evaluate(
@@ -166,23 +231,26 @@ const path = require("node:path");
       () => navigator.serviceWorker.controller !== null,
       { timeout: 10000 },
     );
+    check(
+      await page.evaluate(async () =>
+        (await caches.keys()).includes("pg-role-grantor-v7"),
+      ),
+    );
     await page.setOfflineMode(true);
     await page.reload({ waitUntil: "networkidle0" });
     check(
-      await page.$eval("h1", (e) =>
-        e.textContent.includes("Precise permissions."),
-      ),
+      await page.$eval("h1", (e) => e.textContent),
+      "Build a permission script",
     );
-    await page.click("button[type=submit]");
-    check(
-      (await page.$eval("#sql-code", (e) => e.textContent)).includes(
-        "CREATE ROLE",
-      ),
-    );
+    // Reload clears the plan and form; nothing is persisted.
+    check(await page.$eval("#plan-count", (e) => e.textContent), "0");
+    check(await page.$eval("#operation", (e) => e.value), "profile");
+    await add();
+    check((await sql()).includes("CREATE ROLE"));
     check(external.length, 0);
     check(errors.length, 0);
     console.log(
-      `PASS: ${checks} browser checks. Chromium ${await browser.version()}. Desktop 1440×1100, mobile 390×844, copy, download, offline, validation, version switch, tabs, and zero external requests.`,
+      `PASS: ${checks} browser checks. Chromium ${await browser.version()}. Desktop 1440×1100, mobile 390×844, copy, download, offline, validation, version switch, operation dropdown, toggle bar, placeholders, and zero external requests.`,
     );
   } finally {
     await browser.close();

@@ -34,15 +34,49 @@ const path = require("node:path");
     const sql = () => page.$eval("#sql-code", (e) => e.textContent);
     const selected = (name) =>
       page.$$eval(`[name=${name}]:checked`, (els) => els.map((e) => e.value));
-    const choose = (name, value) =>
-      page.click(`[name=${name}][value="${value}"]`);
+    const choose = (name, value) => click(`[name=${name}][value="${value}"]`);
     const set = (id, value) =>
       page.$eval("#" + id, (e, v) => (e.value = v), value);
     const val = (id) => page.$eval("#" + id, (e) => e.value);
     const add = () => page.click("button[type=submit]");
     const planCount = () => page.$eval("#plan-count", (e) => e.textContent);
+    // Controls inside collapsed details are opened first, as a user would.
+    const reveal = (selector) =>
+      page
+        .$eval(selector, (e) => {
+          for (
+            let d = e.closest("details");
+            d;
+            d = d.parentElement?.closest("details")
+          )
+            d.open = true;
+        })
+        .catch(() => {});
+    const click = async (selector) => {
+      await reveal(selector);
+      await page.click(selector);
+    };
+    const focus = async (selector) => {
+      await reveal(selector);
+      await page.focus(selector);
+    };
+    const operation = (value) => page.select("#operation", value);
+    const grants = async (mode) => {
+      await operation("grants");
+      await click("#grant-mode-" + mode);
+    };
+    // Check the new type first, then clear the rest, like changing a dropdown.
+    const switchType = async (key) => {
+      const box = "#type-" + key;
+      if (!(await page.$eval(box, (e) => e.checked).catch(() => false)))
+        await click(box);
+      for (const other of await page.$$eval("[name=objtype]:checked", (els) =>
+        els.map((e) => e.value),
+      ))
+        if (other !== key) await click("#type-" + other);
+    };
     await add();
-    await page.click("#tab-object");
+    await grants("object");
     check(await page.$eval("#permission", (e) => e.tagName), "FIELDSET");
     check(
       await page.$eval("#permission legend", (e) => e.textContent),
@@ -64,7 +98,7 @@ const path = require("node:path");
       ),
     );
     const queued = await sql();
-    await page.click("#permission-select-all");
+    await click("#permission-select-all");
     const tableAll = [
       "SELECT",
       "INSERT",
@@ -79,7 +113,7 @@ const path = require("node:path");
     check(await sql(), queued);
     await add();
     check((await sql()).includes("GRANT " + tableAll.join(", ") + " ON TABLE"));
-    await page.click("#permission-clear-all");
+    await click("#permission-clear-all");
     check(await selected("privilege"), []);
     const beforeEmpty = await sql();
     await add();
@@ -99,27 +133,27 @@ const path = require("node:path");
     await choose("privilege", "SELECT");
     check(await selected("privilege"), ["SELECT"]);
     await choose("privilege", "UPDATE");
-    await page.select("#object", "sequence");
+    await switchType("sequence");
     check(await selected("privilege"), ["SELECT", "UPDATE"]);
-    await page.select("#object", "function");
+    await switchType("function");
     check(await selected("privilege"), []);
     await add();
     check(await planCount(), "4");
     check(await page.$eval("#form-error", (e) => !e.hidden));
-    await page.focus("[name=privilege][value=EXECUTE]");
+    await focus("[name=privilege][value=EXECUTE]");
     await page.keyboard.press("Space");
     check(await selected("privilege"), ["EXECUTE"]);
-    await page.select("#object", "procedure");
+    await switchType("procedure");
     check(await selected("privilege"), ["EXECUTE"]);
     await choose("privilege", "ALL PRIVILEGES");
-    await page.select("#object", "routine");
+    await switchType("routine");
     check(await selected("privilege"), []);
-    await page.click("#reset-form");
-    check(await val("object"), "table");
+    await click("#reset-form");
+    check(await selected("objtype"), ["table"]);
     check(await selected("privilege"), ["SELECT"]);
     check(await planCount(), "4");
     // Defaults use the same accessible controls and preserve valid intersections.
-    await page.click("#tab-default");
+    await grants("default");
     await choose("privilege", "INSERT");
     await add();
     check(
@@ -127,11 +161,11 @@ const path = require("node:path");
         'GRANT SELECT, INSERT ON TABLES TO "example_app";',
       ),
     );
-    await page.click("#permission-clear-all");
+    await click("#permission-clear-all");
     await add();
     check(await planCount(), "5");
     check(await page.$eval("#form-error", (e) => !e.hidden));
-    await page.focus("#permission-select-all");
+    await focus("#permission-select-all");
     await page.keyboard.press("Enter");
     check(await selected("privilege"), tableAll);
     check(
@@ -141,16 +175,16 @@ const path = require("node:path");
     await add();
     await choose("privilege", "ALL PRIVILEGES");
     check(await selected("privilege"), ["ALL PRIVILEGES"]);
-    await page.select("#object", "schema");
+    await switchType("schema");
     check(await selected("privilege"), []);
     check(await val("schemas"), "");
-    await page.click("#permission-select-all");
+    await click("#permission-select-all");
     check(await selected("privilege"), ["USAGE", "CREATE"]);
-    await page.click("#reset-form");
+    await click("#reset-form");
     check(await selected("privilege"), ["SELECT"]);
     check(await planCount(), "6");
     // Predefined choices are explicit, combinable, and separate from custom names.
-    await page.click("#tab-membership");
+    await operation("membership");
     check(await page.$eval("#builtin", (e) => e.tagName), "FIELDSET");
     check(await selected("builtin"), []);
     check(await val("roles"), "");
@@ -169,7 +203,7 @@ const path = require("node:path");
         (e) => e.disabled,
       ),
     );
-    await page.focus("[name=builtin][value=pg_monitor]");
+    await focus("[name=builtin][value=pg_monitor]");
     await page.keyboard.press("Space");
     await choose("builtin", "pg_read_all_settings");
     check(await selected("builtin"), ["pg_monitor", "pg_read_all_settings"]);
@@ -195,7 +229,7 @@ const path = require("node:path");
     );
     check((await sql()).includes('"pg_monitor", "pg_monitor"'), false);
     const membershipPlan = await sql();
-    await page.click("#builtin-select-all");
+    await click("#builtin-select-all");
     check((await selected("builtin")).length, 14);
     check(
       await page.$$eval("[name=builtin]:disabled", (els) =>
@@ -203,7 +237,7 @@ const path = require("node:path");
       ),
     );
     check(await sql(), membershipPlan);
-    await page.focus("#builtin-clear-all");
+    await focus("#builtin-clear-all");
     await page.keyboard.press("Space");
     check(await selected("builtin"), []);
     check(await val("roles"), "example_access, pg_monitor");
@@ -212,14 +246,14 @@ const path = require("node:path");
     await choose("builtin", "pg_monitor");
     await choose("builtin", "pg_read_all_stats");
     await set("roles", "custom_draft");
-    await page.click("#tab-object");
+    await grants("object");
     await set("grantees", "other_draft");
-    await page.click("#reset-form");
-    await page.click("#tab-membership");
+    await click("#reset-form");
+    await operation("membership");
     check(await selected("builtin"), ["pg_monitor", "pg_read_all_stats"]);
     check(await val("roles"), "custom_draft");
     const beforeReset = await sql();
-    await page.click("#reset-form");
+    await click("#reset-form");
     check(await selected("builtin"), []);
     check(await val("roles"), "");
     check(await page.$eval("#builtin-info", (e) => e.textContent), "");
@@ -235,7 +269,7 @@ const path = require("node:path");
           totals[version],
         );
         check(await selected("builtin"), []);
-        await page.click("#builtin-select-all");
+        await click("#builtin-select-all");
         check(
           (await selected("builtin")).length,
           totals[version] - (platform === "aurora" ? 4 : 1),
@@ -259,10 +293,10 @@ const path = require("node:path");
             .then(Boolean),
           version >= 16,
         );
-        await page.click("#builtin-clear-all");
+        await click("#builtin-clear-all");
         check(await selected("builtin"), []);
         await choose("builtin", "pg_monitor");
-        await page.click("#reset-form");
+        await click("#reset-form");
         check(await selected("builtin"), []);
       }
     // Even DOM tampering cannot bypass generator platform safeguards.
@@ -278,7 +312,7 @@ const path = require("node:path");
       ),
     );
     check(await planCount(), "9");
-    await page.click("#reset-form");
+    await click("#reset-form");
     check(
       await page.$eval(
         "[name=builtin][value=pg_execute_server_program]",
@@ -287,28 +321,125 @@ const path = require("node:path");
     );
     for (const version of [14, 15, 16, 17]) {
       await page.select("#version", String(version));
-      await page.click("#tab-object");
+      await grants("object");
       check(await selected("privilege"), ["SELECT"]);
-      await page.click("#permission-select-all");
+      await click("#permission-select-all");
       check((await selected("privilege")).length, version === 17 ? 8 : 7);
       check((await selected("privilege")).includes("MAINTAIN"), version === 17);
-      check(
-        await page.$eval("#object", (e) =>
-          [...e.options].some((o) => o.value === "parameter"),
-        ),
-        version >= 15,
-      );
-      await page.select("#object", "column");
+      check(await page.$("#type-parameter").then(Boolean), version >= 15);
+      await switchType("column");
       check(await selected("privilege"), [
         "SELECT",
         "INSERT",
         "UPDATE",
         "REFERENCES",
       ]);
-      await page.click("#permission-clear-all");
-      await page.click("#reset-form");
+      await click("#permission-clear-all");
+      await click("#reset-form");
       check(await selected("privilege"), ["SELECT"]);
     }
+    // Multi-type grants: one Add emits one statement per type, filtered per type.
+    await grants("object");
+    await click("#reset-form");
+    await click("#type-sequence");
+    check(await selected("objtype"), ["table", "sequence"]);
+    check(
+      await page.$$eval("[name=privilege]", (els) => els.map((e) => e.value)),
+      [...tableAll, "USAGE", "ALL PRIVILEGES"],
+    );
+    check(await selected("privilege"), ["SELECT"]);
+    await page.select("#scope", "all");
+    check(await val("schemas"), "example_schema");
+    await choose("privilege", "USAGE");
+    check(await selected("privilege"), ["SELECT", "USAGE"]);
+    const beforeMulti = Number(await planCount());
+    await add();
+    check(await planCount(), String(beforeMulti + 1));
+    check(
+      (await sql()).includes(
+        'GRANT SELECT ON ALL TABLES IN SCHEMA "example_schema" TO "example_app";\nGRANT SELECT, USAGE ON ALL SEQUENCES IN SCHEMA "example_schema" TO "example_app";',
+      ),
+    );
+    await page.$eval(
+      "#plan-list > li:last-child details",
+      (e) => (e.open = true),
+    );
+    check(
+      await page.$eval("#plan-list > li:last-child", (e) =>
+        e.textContent.includes("SELECT, USAGE on all existing SEQUENCES"),
+      ),
+    );
+    await choose("privilege", "SELECT");
+    check(await selected("privilege"), ["USAGE"]);
+    await add();
+    check(
+      await page.$eval("#form-error", (e) =>
+        e.textContent.includes(
+          "None of the selected permissions apply to Table",
+        ),
+      ),
+    );
+    check(await planCount(), String(beforeMulti + 1));
+    // Types that need their own fields are exclusive.
+    await click("#type-column");
+    check(await selected("objtype"), ["column"]);
+    check(await page.$("#columns").then(Boolean));
+    await click("#type-table");
+    check(await selected("objtype"), ["table"]);
+    await click("#type-database");
+    check(await page.$("#scope"), null);
+    await click("#type-database");
+    await click("#type-table");
+    check(await selected("objtype"), []);
+    check(await page.$("#permissions-empty").then(Boolean));
+    await add();
+    check(
+      await page.$eval("#form-error", (e) =>
+        e.textContent.includes("Select at least one object type"),
+      ),
+    );
+    await click("#type-table");
+    await click("#type-routine");
+    await add();
+    check(
+      await page.$eval("#form-error", (e) =>
+        e.textContent.includes("exact overload"),
+      ),
+    );
+    // Each toggle side keeps its own draft; Reset clears only the visible side.
+    await set("grantees", "existing_draft");
+    await grants("default");
+    check(
+      await page.$eval("#grant-mode-default", (e) =>
+        e.getAttribute("aria-pressed"),
+      ),
+      "true",
+    );
+    check(await page.$("#scope"), null);
+    check(await page.$eval("#creators", (e) => e.placeholder), "example_owner");
+    check(await page.$eval("#schemas", (e) => e.placeholder), "example_schema");
+    check(await page.$("#type-database"), null);
+    await click("#type-sequence");
+    await set("creators", "future_draft");
+    await grants("object");
+    check(await val("grantees"), "existing_draft");
+    check(await selected("objtype"), ["table", "routine"]);
+    await operation("profile");
+    await grants("default");
+    check(await val("creators"), "future_draft");
+    check(await selected("objtype"), ["table", "sequence"]);
+    await add();
+    check(
+      (await sql()).includes(
+        'ALTER DEFAULT PRIVILEGES FOR ROLE "future_draft"\n  GRANT SELECT ON TABLES TO "example_app";\nALTER DEFAULT PRIVILEGES FOR ROLE "future_draft"\n  GRANT SELECT ON SEQUENCES TO "example_app";',
+      ),
+    );
+    await click("#reset-form");
+    check(await val("creators"), "");
+    await grants("object");
+    check(await val("grantees"), "existing_draft");
+    await click("#reset-form");
+    check(await val("grantees"), "example_app");
     // Responsive screenshots show real controls, not just generated markup.
     await choose("privilege", "INSERT");
     await choose("privilege", "UPDATE");
@@ -317,7 +448,7 @@ const path = require("node:path");
       path: path.join(artifacts, "checkbox-desktop.png"),
       fullPage: true,
     });
-    await page.click("#tab-membership");
+    await operation("membership");
     await choose("builtin", "pg_monitor");
     await choose("builtin", "pg_read_all_settings");
     await page.evaluate(() => scrollTo(0, 0));
@@ -341,7 +472,7 @@ const path = require("node:path");
     await page.screenshot({
       path: path.join(artifacts, "checkbox-mobile-roles.png"),
     });
-    await page.click("#tab-object");
+    await grants("object");
     await page.$eval("#permission", (e) =>
       e.scrollIntoView({ block: "center" }),
     );
@@ -357,7 +488,7 @@ const path = require("node:path");
     await page.waitForFunction(() => navigator.serviceWorker.controller);
     await page.setOfflineMode(true);
     await page.reload({ waitUntil: "networkidle0" });
-    await page.click("#tab-membership");
+    await operation("membership");
     await choose("builtin", "pg_monitor");
     await choose("builtin", "pg_read_all_settings");
     await add();
@@ -368,7 +499,7 @@ const path = require("node:path");
     check(errors, []);
     check(external, []);
     console.log(
-      `PASS: ${count} checkbox browser checks on ${await browser.version()}. Multi-permission/default/role SQL, bulk controls, ALL exclusivity, empty choices, supported majors/platforms, disabled safeguards, draft/reset preservation, keyboard focus, offline use and mobile layout.`,
+      `PASS: ${count} checkbox browser checks on ${await browser.version()}. Multi-type and multi-permission/default/role SQL, toggle drafts, bulk controls, ALL exclusivity, empty choices, supported majors/platforms, disabled safeguards, draft/reset preservation, keyboard focus, offline use and mobile layout.`,
     );
   } finally {
     await browser.close();

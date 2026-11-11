@@ -91,13 +91,31 @@ for (const version of [14, 15, 16, 17])
           /ALTER DEFAULT PRIVILEGES FOR ROLE "creator1", "creator2" IN SCHEMA "s1", "s2"/,
         );
         assert.match(result.sql, /GRANT "example_access" TO "example_app"/);
-        if (profile === "writer") {
-          assert.match(result.sql, /GRANT SELECT, INSERT, UPDATE, DELETE/);
-          assert.match(result.sql, /GRANT USAGE ON ALL SEQUENCES/);
+        if (profile !== "executor") {
+          const tables =
+            profile === "writer"
+              ? "SELECT, INSERT, UPDATE, DELETE, TRUNCATE"
+              : "SELECT";
+          for (const line of [
+            `GRANT ${tables} ON ALL TABLES IN SCHEMA "s1", "s2" TO "example_access";`,
+            `GRANT ${tables} ON TABLES TO "example_access";`,
+            'GRANT SELECT, USAGE ON ALL SEQUENCES IN SCHEMA "s1", "s2" TO "example_access";',
+            'GRANT SELECT, USAGE ON SEQUENCES TO "example_access";',
+            'GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA "s1", "s2" TO "example_access";',
+            'GRANT EXECUTE ON FUNCTIONS TO "example_access";',
+            'GRANT USAGE ON TYPES TO "example_access";',
+          ])
+            assert.ok(result.sql.includes(line), line);
           assert.doesNotMatch(
-            result.sql,
-            /GRANT (?:UPDATE ON ALL SEQUENCES|TRUNCATE)/,
+            result.sql.replace(/^--.*$/gm, ""),
+            /ALL TYPES|ALL ROUTINES|ALL PROCEDURES|UPDATE ON (?:ALL )?SEQUENCES|USAGE, UPDATE|GRANT CREATE ON SCHEMA/,
           );
+          assert.equal(result.sql.includes("TRUNCATE"), profile === "writer");
+          assert.ok(result.warnings.some((w) => w.includes("nextval")));
+          assert.ok(result.warnings.some((w) => w.includes("ALL TYPES")));
+        } else {
+          assert.match(result.sql, /GRANT EXECUTE ON ALL ROUTINES IN SCHEMA/);
+          assert.doesNotMatch(result.sql, /SEQUENCES|TABLES|TYPES/);
         }
         if (version >= 16)
           assert.match(result.sql, /WITH ADMIN FALSE, INHERIT TRUE, SET FALSE/);
@@ -388,5 +406,154 @@ test("custom role array elements remain quoted identifiers", () => {
     }).includes(
       'GRANT "custom""; DROP ROLE victim; --", "pg_monitor" TO "app";',
     ),
+  );
+});
+
+const profileOp = {
+  kind: "profile",
+  profile: "reader",
+  group: "example_access",
+  database: "example_db",
+  schemas: "s1",
+  creators: "",
+  members: "",
+};
+test("blank creators omit FOR ROLE and warn that only the executing role is covered", () => {
+  for (const profile of ["reader", "writer", "executor"]) {
+    const result = generate(ctx, [{ ...profileOp, profile }]);
+    assert.doesNotMatch(result.sql, /FOR ROLE/);
+    assert.match(
+      result.sql,
+      /ALTER DEFAULT PRIVILEGES IN SCHEMA "s1"\n  GRANT/,
+    );
+    assert.doesNotMatch(result.sql, /Required role does not exist/);
+    assert.ok(result.warnings.some((w) => w.includes("CURRENT_USER")));
+  }
+  const global = generate(ctx, [
+    {
+      kind: "default",
+      object: "table",
+      privileges: ["SELECT"],
+      grantees: "app",
+      creators: " , ",
+      schemas: "",
+    },
+  ]);
+  assert.match(
+    global.sql,
+    /ALTER DEFAULT PRIVILEGES\n  GRANT SELECT ON TABLES TO "app";/,
+  );
+  assert.ok(global.warnings.some((w) => w.includes("CURRENT_USER")));
+});
+test("named creators keep FOR ROLE and role checks", () => {
+  const result = generate(ctx, [
+    { ...profileOp, creators: "owner_a, owner_b" },
+  ]);
+  assert.match(
+    result.sql,
+    /ALTER DEFAULT PRIVILEGES FOR ROLE "owner_a", "owner_b" IN SCHEMA "s1"/,
+  );
+  assert.match(result.sql, /rolname = E'owner_a'\) THEN\n    RAISE EXCEPTION/);
+  assert.ok(!result.warnings.some((w) => w.includes("CURRENT_USER")));
+  // Required fields stay required.
+  for (const change of [{ group: "" }, { database: "" }, { schemas: "" }])
+    assert.throws(() => generate(ctx, [{ ...profileOp, ...change }]));
+});
+test("multi-type grants emit one statement per type with only supported privileges", () => {
+  const op = {
+    kind: "object",
+    objects: ["table", "sequence"],
+    scope: "all",
+    schemas: "s1",
+    privileges: ["SELECT", "USAGE"],
+    grantees: "app",
+  };
+  const text = sql(op);
+  assert.ok(
+    text.includes(
+      'GRANT SELECT ON ALL TABLES IN SCHEMA "s1" TO "app";\nGRANT SELECT, USAGE ON ALL SEQUENCES IN SCHEMA "s1" TO "app";',
+    ),
+  );
+  assert.doesNotMatch(text, /USAGE ON ALL TABLES/);
+  assert.match(
+    sql({ ...op, privileges: ["ALL PRIVILEGES"], action: "revoke" }),
+    /REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA "s1" FROM "app" RESTRICT;\nREVOKE ALL PRIVILEGES ON ALL SEQUENCES/,
+  );
+  assert.match(
+    sql({ ...op, scope: "named", targets: "s1.a, s1.b" }),
+    /ON TABLE "s1"."a", "s1"."b" TO "app";\nGRANT SELECT, USAGE ON SEQUENCE "s1"."a", "s1"."b"/,
+  );
+  const defaults = sql({
+    ...op,
+    kind: "default",
+    objects: ["table", "sequence", "routine", "type"],
+    privileges: ["SELECT", "USAGE", "EXECUTE"],
+    creators: "owner",
+  });
+  for (const line of [
+    "GRANT SELECT ON TABLES",
+    "GRANT SELECT, USAGE ON SEQUENCES",
+    "GRANT EXECUTE ON FUNCTIONS",
+    "GRANT USAGE ON TYPES",
+  ])
+    assert.ok(defaults.includes(line), line);
+  // Legacy single `object` and a single-element `objects` are equivalent.
+  assert.equal(
+    sql({ ...op, objects: ["table"], privileges: ["SELECT"] }),
+    sql({ ...op, objects: undefined, object: "table", privileges: ["SELECT"] }),
+  );
+});
+test("multi-type grants fail closed for empty, unsupported, and incompatible mixes", () => {
+  const op = {
+    kind: "object",
+    objects: ["table", "sequence"],
+    scope: "all",
+    schemas: "s1",
+    privileges: ["SELECT"],
+    grantees: "app",
+  };
+  for (const [change, message] of [
+    [
+      { privileges: ["USAGE"] },
+      /None of the selected permissions apply to Table/,
+    ],
+    [{ privileges: ["EXECUTE", "SELECT"] }, /EXECUTE is not supported for any/],
+    [{ privileges: ["ALL PRIVILEGES", "SELECT"] }, /not both/],
+    [{ privileges: [] }, /at least one permission/],
+    [{ objects: [] }, /at least one object type/],
+    [{ objects: ["table", "column"] }, /needs its own operation/],
+    [{ objects: ["table", "largeobject"] }, /needs its own operation/],
+    [{ objects: ["table", "parameter"] }, /needs its own operation/],
+    [{ objects: ["table", "database"] }, /does not support ALL/],
+    [
+      { objects: ["table", "function"], scope: "named", targets: "s1.f" },
+      /exact overload/,
+    ],
+    [
+      { objects: ["table", "schema"], scope: "named", targets: "s1" },
+      /different name formats/,
+    ],
+    [
+      { kind: "default", objects: ["table", "database"], creators: "o" },
+      /no default/,
+    ],
+    [
+      {
+        kind: "default",
+        objects: ["table", "schema"],
+        creators: "o",
+        privileges: ["USAGE", "SELECT"],
+      },
+      /must be global/,
+    ],
+  ])
+    assert.throws(() => sql({ ...op, ...change }), message);
+  assert.match(
+    sql({
+      ...op,
+      objects: ["function", "procedure"],
+      privileges: ["EXECUTE"],
+    }),
+    /ON ALL FUNCTIONS IN SCHEMA "s1" TO "app";\nGRANT EXECUTE ON ALL PROCEDURES/,
   );
 });

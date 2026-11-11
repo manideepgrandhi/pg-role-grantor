@@ -19,7 +19,7 @@ function columnRow(localName = "id", type = "integer", remoteName = "") {
     row = document.createElement("div");
   row.className = "fdw-row column-row";
   row.dataset.row = id;
-  row.innerHTML = `<div class="field-grid">${field(`column-${id}-name`, "Local column name", localName)}${field(`column-${id}-type`, "Column data type", type, "Simple concrete types, custom schema.type, or [] arrays. No typmods or SQL.")}${field(`column-${id}-remote`, "Remote column (blank = same)", remoteName)}</div>${check(`column-${id}-notnull`, "NOT NULL matches remote column")}<button type="button" class="text-button remove-row" aria-label="Remove column ${id}">Remove column</button>`;
+  row.innerHTML = `<div class="field-grid">${field(`column-${id}-name`, "Local column name", localName)}${field(`column-${id}-type`, "Column data type", type, "Simple concrete types, custom schema.type, or [] arrays. No typmods or SQL.")}${field(`column-${id}-remote`, "Remote column (optional)", remoteName, "", "input", "same as local")}</div>${check(`column-${id}-notnull`, "NOT NULL matches remote column")}<button type="button" class="text-button remove-row" aria-label="Remove column ${id}">Remove column</button>`;
   row.querySelector("button").addEventListener("click", () => row.remove());
   $("column-rows").append(row);
 }
@@ -27,7 +27,7 @@ function tableFields() {
   const mode = $("mode").value;
   $("fdw-tables").innerHTML =
     mode === "server"
-      ? '<p class="description">Server and role mappings only. No local schema or foreign tables are created. Add reviewed table definitions and grants before querying.</p>'
+      ? '<p class="description">Server and role mappings only. Add reviewed tables and grants before querying.</p>'
       : `<div class="field-grid">${field("localSchema", "Local schema", "example_foreign")}${field("remoteSchema", "Remote schema", "example_remote")}</div>` +
         (mode === "import"
           ? `${field("importAs", "Import as local mapped role", "example_importer", "Must be listed above. Executor needs SET ROLE authority. Importer receives schema CREATE and owns imported tables.")}${select(
@@ -66,7 +66,7 @@ function tableFields() {
 export function renderFdwForm(panel) {
   nextMapping = 0;
   nextColumn = 0;
-  panel.innerHTML = `<p class="description">Set up <code>postgres_fdw</code> and map each local role to a remote database user. SQL generation only. Every value below is an example.</p><div class="fdw-notice"><strong>No passwords in this site.</strong> Downloaded SQL contains blocking credential placeholders. Replace every full marker privately with UTF-8 hex of the remote password, including the preflight guard. Hex is reversible, not encryption.</div><div class="field-grid">${field("server", "Local foreign-server name", "example_server")}${field("localDatabase", "Connected local database", "example_db", "A preflight guard verifies this database name.")}</div><div class="field-grid">${field("host", "Remote host", "remote.example.invalid", "One hostname or IP. Connections originate from your database server.")}${field("port", "Remote port", "5432")}</div>${field("database", "Remote database", "example_remote_db")}<div class="field-grid">${select(
+  panel.innerHTML = `<p class="description">Set up <code>postgres_fdw</code> and map each local role to a remote user.</p><div class="fdw-notice"><strong>No passwords in this site.</strong> Downloaded SQL contains blocking credential placeholders. Replace every full marker privately with UTF-8 hex of the remote password, including the preflight guard. Hex is reversible, not encryption.</div><div class="field-grid">${field("server", "Local foreign-server name", "example_server")}${field("localDatabase", "Connected local database", "example_db", "A preflight guard checks this name.")}</div><div class="field-grid">${field("host", "Remote host", "remote.example.invalid", "Connections start from your database server.")}${field("port", "Remote port", "5432")}</div>${field("database", "Remote database", "example_remote_db")}<details class="field advanced" id="tls-options"><summary>TLS options</summary><div class="field-grid">${select(
     "sslmode",
     "Transport security",
     [
@@ -75,7 +75,7 @@ export function renderFdwForm(panel) {
       ["disable", "disable · isolated tests only"],
     ],
     "verify-full",
-  )}${field("sslrootcert", "CA path on database server (optional)", "", "For verify-full only. Not a local upload. Aurora filesystem and trust configuration are managed.")}</div><div class="subheading"><h3>Role mappings</h3><button type="button" class="text-button" id="add-mapping">+ Add mapping</button></div><p class="hint">Mapped local roles must already exist before this plan runs. Explicit local role → remote user. Group membership does not inherit a group user mapping. No PUBLIC mappings, remote logins, or IAM roles are created.</p><div id="mapping-rows"></div>${select(
+  )}${field("sslrootcert", "CA path on database server (optional)", "", "verify-full only. A server path, not an upload. Aurora manages trust.", "input", "/path/to/root.crt")}</div></details><div class="subheading"><h3>Role mappings</h3><button type="button" class="text-button" id="add-mapping">+ Add mapping</button></div><p class="hint">Local roles must already exist. Group membership does not inherit a mapping. No PUBLIC mappings or remote logins are created.</p><div id="mapping-rows"></div>${select(
     "access",
     "Local table permissions",
     [

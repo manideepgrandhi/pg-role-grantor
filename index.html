@@ -22,110 +22,39 @@
       >
     </header>
     <main>
-      <section class="intro">
-        <div>
-          <p class="eyebrow">POSTGRESQL PERMISSION WORKSPACE</p>
-          <h1>Precise permissions.<br /><span>One reviewed script.</span></h1>
-          <p class="lede">
-            Create roles, grant access, and configure future objects.<br
-              class="desktop-break"
-            />
-            Your SQL stays in your browser. You decide when to run it.
-          </p>
-        </div>
-        <div class="target card">
-          <h2>Target engine</h2>
-          <div class="engine-grid">
+      <div class="workspace">
+        <section class="builder card" aria-labelledby="builder-title">
+          <div class="section-heading">
+            <h1 id="builder-title">Build a permission script</h1>
+          </div>
+          <div class="engine-line">
             <label for="platform"
-              >Platform<select id="platform">
+              >Engine<select id="platform" autocomplete="off">
                 <option value="postgres">PostgreSQL</option>
                 <option value="aurora">Aurora PostgreSQL</option>
               </select></label
             ><label for="version"
-              >Major version<select id="version">
+              >Version<select id="version" autocomplete="off">
                 <option>17</option>
                 <option>16</option>
                 <option>15</option>
                 <option>14</option>
               </select></label
+            ><label for="operation"
+              >Operation<select id="operation" autocomplete="off">
+                <option value="profile">Access setup</option>
+                <option value="grants">Grants</option>
+                <option value="membership">Membership</option>
+                <option value="group">Create role</option>
+                <option value="fdw">FDW setup</option>
+              </select></label
             >
-          </div>
-          <p class="hint">
-            Version-aware SQL · Upstream majors 14–17<br />
-            Aurora availability depends on your engine release.
-          </p>
-        </div>
-      </section>
-      <div class="workspace">
-        <section class="builder card" aria-labelledby="builder-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">01 / CONFIGURE</p>
-              <h2 id="builder-title">Build your access plan</h2>
-            </div>
-            <span class="badge">SQL only</span>
-          </div>
-          <div class="tabs" role="tablist" aria-label="Operation type">
-            <button
-              id="tab-profile"
-              role="tab"
-              aria-controls="operation-panel"
-              aria-selected="true"
-              data-tab="profile"
-            >
-              Access setup</button
-            ><button
-              id="tab-object"
-              role="tab"
-              aria-controls="operation-panel"
-              aria-selected="false"
-              tabindex="-1"
-              data-tab="object"
-            >
-              Object grants</button
-            ><button
-              id="tab-default"
-              role="tab"
-              aria-controls="operation-panel"
-              aria-selected="false"
-              tabindex="-1"
-              data-tab="default"
-            >
-              Defaults</button
-            ><button
-              id="tab-fdw"
-              role="tab"
-              aria-controls="operation-panel"
-              aria-selected="false"
-              tabindex="-1"
-              data-tab="fdw"
-            >
-              FDW setup</button
-            ><button
-              id="tab-membership"
-              role="tab"
-              aria-controls="operation-panel"
-              aria-selected="false"
-              tabindex="-1"
-              data-tab="membership"
-            >
-              Membership</button
-            ><button
-              id="tab-group"
-              role="tab"
-              aria-controls="operation-panel"
-              aria-selected="false"
-              tabindex="-1"
-              data-tab="group"
-            >
-              Create role
-            </button>
           </div>
           <form id="operation-form" novalidate>
             <div
               id="operation-panel"
-              role="tabpanel"
-              aria-labelledby="tab-profile"
+              role="region"
+              aria-label="Access setup"
             ></div>
             <p class="form-error" id="form-error" role="alert" hidden></p>
             <div class="form-actions">
@@ -151,71 +80,25 @@
           </form>
           <div class="plan">
             <div class="plan-heading">
-              <h3>Script plan <span id="plan-count" class="count">0</span></h3>
+              <h2>Script plan <span id="plan-count" class="count">0</span></h2>
               <button class="text-button" id="clear" type="button">
                 Clear plan
               </button>
             </div>
-            <ol id="plan-list"></ol>
+            <ol
+              id="plan-list"
+              aria-label="Script plan. Expand an item for details."
+            ></ol>
             <p id="empty-plan" class="hint">
-              Add an operation. Combine multiple grants in one script.
+              Add an operation. Expand an item to review what it grants.
             </p>
           </div>
         </section>
         <section class="preview card" aria-labelledby="preview-title">
           <div class="section-heading">
-            <div>
-              <p class="eyebrow">02 / REVIEW & EXPORT</p>
-              <h2 id="preview-title">Generated SQL</h2>
-            </div>
+            <h2 id="preview-title">Generated SQL</h2>
             <span id="sql-lines" class="hint"></span>
           </div>
-          <section class="permission-summary" aria-labelledby="summary-title">
-            <h3 id="summary-title">Permission summary</h3>
-            <p class="hint">
-              Requested operations, in order, not verified database state. Later
-              requests may supersede earlier ones. Expand an item for details.
-            </p>
-            <p
-              id="summary-count"
-              class="hint"
-              role="status"
-              aria-live="polite"
-            ></p>
-            <div
-              id="permission-summary"
-              tabindex="0"
-              aria-label="Queued permission requests. Scroll to review all."
-            ></div>
-          </section>
-          <fieldset class="sql-mode">
-            <legend>SQL preview</legend>
-            <label
-              ><input
-                type="radio"
-                name="sql-mode"
-                id="mode-setup"
-                value="setup"
-                checked
-              />
-              Setup SQL</label
-            >
-            <label
-              ><input
-                type="radio"
-                name="sql-mode"
-                id="mode-verification"
-                value="verification"
-              />
-              Verification SQL</label
-            >
-          </fieldset>
-          <p id="verification-help" class="hint verification-help" hidden>
-            Read-only catalog inspection after setup. No automatic PASS verdicts
-            or remote connections. Compare requested intent with the returned
-            ACL, effective access, membership, and default-ACL evidence. Catalog
-            visibility can limit results.
-          </p>
           <div class="preview-toolbar">
             <span class="file-label" id="file-label">permission-plan.sql</span>
             <div>
@@ -229,12 +112,37 @@
           <pre
             id="sql"
             tabindex="0"
-            aria-label="Generated SQL script"
+            aria-label="Setup SQL script"
           ><code id="sql-code"></code></pre>
-          <div class="preview-footer">
-            <span class="dot"></span
-            ><span>Standalone SQL. No wrapper procedure required.</span>
-          </div>
+          <details id="verification" class="verification">
+            <summary>
+              Verification SQL
+              <span class="hint">read-only, run after setup</span>
+            </summary>
+            <p class="hint verification-help">
+              Catalog inspection only. No PASS verdicts. Compare the returned
+              ACL, membership, and default-ACL evidence with your plan.
+            </p>
+            <div class="preview-toolbar">
+              <span class="file-label">permission-verification.sql</span>
+              <div>
+                <button class="button small" id="verify-copy" type="button">
+                  Copy verification SQL</button
+                ><button
+                  class="button small"
+                  id="verify-download"
+                  type="button"
+                >
+                  Download .sql
+                </button>
+              </div>
+            </div>
+            <pre
+              id="verify-sql"
+              tabindex="0"
+              aria-label="Read-only verification SQL script"
+            ><code id="verify-code"></code></pre>
+          </details>
           <p id="status" role="status" aria-live="polite"></p>
         </section>
       </div>
@@ -243,9 +151,7 @@
           <span class="warning-icon" aria-hidden="true">!</span>
           <div>
             <h2 id="review-title">Before you run this</h2>
-            <p class="hint">
-              The generator validates syntax choices, not your database state.
-            </p>
+            <p class="hint">Checks syntax, not your database state.</p>
           </div>
         </div>
         <p id="plan-error" role="alert" class="form-error" hidden></p>

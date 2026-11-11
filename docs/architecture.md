@@ -41,11 +41,11 @@ Verification includes an isolated native PostgreSQL cluster with SCRAM-authentic
 
 ## Ordered review and read-only inspection
 
-The operation plan still owns state. `generate(context, operations)` validates it and remains the setup-SQL authority. The review UI has a separate preview-mode value, not another copy of the plan.
+The operation plan still owns state. `generate(context, operations)` validates it and remains the setup-SQL authority. The review UI derives both previews from the same plan; it holds no other copy.
 
 Two designs were compared. Parsing generated setup SQL into a desired final ACL would duplicate the PostgreSQL grammar and imply a final state that the browser cannot know. Inheritance, grantors, PUBLIC, and existing objects are not available offline. The chosen design reads the validated structured operations directly and reports ordered intent plus catalog inspection, without compliance verdicts.
 
-`src/plan-review.js` exports `summarize(context, operations)` and a shared `expandOperation(context, operation)`. Profiles and FDW local grants expand into the same small operation shapes used by catalog inspection. Profile expansion is tested against the setup generator. Structured FDW name parts preserve literal dots and commas rather than reparsing them as schema separators.
+`src/plan-review.js` exports `summarize(context, operations)` and a shared `expandOperation(context, operation)`. Profiles, multi-type grants (`objects: [...]`, split by the generator's `splitObjects`), and FDW local grants expand into the same small operation shapes used by catalog inspection. Profile expansion is tested against the setup generator. Structured FDW name parts preserve literal dots and commas rather than reparsing them as schema separators.
 
 `src/verification.js` exports `generateVerification(context, operations)`, which returns `{sql}`. Every generated statement is SELECT-only. Named objects resolve through catalogs, and routine overloads compare input-type OIDs without executing a user routine. Missing resources remain visible through left joins. Nullable and empty ACL arrays are guarded before `aclexplode`.
 

@@ -18,45 +18,65 @@ Open `http://127.0.0.1:8080`. ES modules need HTTP, so opening `index.html` dire
 
 ## Build a script
 
-1. Select PostgreSQL or Aurora PostgreSQL and a supported major version.
-2. Choose **Access setup** for a reader, read-write, or routine-executor group. Replace every `example_` value with your own name.
-3. Enter the database, schemas, actual future-object creators, and existing user roles that receive membership.
+1. Select the engine (PostgreSQL or Aurora PostgreSQL) and a supported major version. PostgreSQL 17 is the default.
+2. In **Operation**, keep **Access setup** for a reader, read-write, or routine-executor group. Replace every `example_` value with your own name.
+3. Enter the database and schemas. **Future object creators** and **Assign to users / roles** are optional and start blank.
 4. Select **Add to script**.
-5. Add individual object grants, default privileges, memberships, or another group as needed. Remove an operation to replace it.
-6. Read **Before you run this** and inspect the generated SQL.
-7. Select **Setup SQL**, then **Copy setup SQL** or **Download .sql**. Run the script yourself in the intended database using an account with the required authority.
+5. Pick another operation (**Grants**, **Membership**, **Create role**, or **FDW setup**) to add more. Remove an operation to replace it.
+6. Expand items in **Script plan** and read **Before you run this**.
+7. Select **Copy SQL** or **Download .sql**. Run the script yourself in the intended database using an account with the required authority.
 
-The **FDW setup** pane also generates extension, foreign-server, explicit local-role-to-remote-user mappings, optional schema import or a structured foreign table, and required local grants. Passwords are placeholders only, with blocking preflight guards. Private substitutions accept UTF-8 hex only, never raw passwords in this site. See the [FDW reference](docs/fdw.md).
+Optional fields show a grey placeholder instead of an example value. Required fields keep `example_` values to replace.
+
+The **FDW setup** operation also generates extension, foreign-server, explicit local-role-to-remote-user mappings, optional schema import or a structured foreign table, and required local grants. Passwords are placeholders only, with blocking preflight guards. Private substitutions accept UTF-8 hex only, never raw passwords in this site. See the [FDW reference](docs/fdw.md).
 
 The app does not discover objects or verify names, creator roles, ownership, or grant authority. PostgreSQL can issue warnings and grant only a subset of the requested privileges. Inspect server output and resulting ACLs, even after a successful transaction.
 
-Changing the platform or major version revalidates the entire plan. Export is disabled if any operation becomes incompatible. Tabs keep your form drafts in memory. Changing the target or reloading the page resets those drafts. Operations already added to the plan remain until removed, cleared, or the page reloads.
+Changing the platform or major version revalidates the entire plan. Export is disabled if any operation becomes incompatible. Each operation, and each side of the **Grants** toggle, keeps its form draft in memory. Changing the target or reloading the page resets those drafts. Operations already added to the plan remain until removed, cleared, or the page reloads.
 
-**Reset form** restores only the current pane to its initial example values and clears its validation messages. It keeps the script plan, selected platform and version, and other panes' drafts. **Clear plan** asks for confirmation when the plan contains operations. Cancel keeps everything unchanged. Confirm removes only queued SQL, not the current form or target.
+**Reset form** restores only the current form (for **Grants**, only the visible Existing or Future side) to its initial values and clears its validation messages. It keeps the script plan, selected platform and version, and other drafts. **Clear plan** asks for confirmation when the plan contains operations. Cancel keeps everything unchanged. Confirm removes only queued SQL, not the current form or target.
+
+## Grant existing or future objects
+
+**Grants** has a toggle bar:
+
+- **Existing objects** generates GRANT or REVOKE on objects that exist now, by name or as `ALL ... IN SCHEMA`.
+- **Future objects** generates `ALTER DEFAULT PRIVILEGES`. Creators and schema scope are optional. A blank schema scope is database-wide. Schema defaults are always database-wide.
+
+Object types are checkboxes. Table, schema, database, sequence, and routine are shown first. The rest are under **More**. Tables, views, and foreign tables are one type because PostgreSQL grants them all with `TABLE` syntax.
+
+Check several types to grant them in one step. One **Add to script** creates one statement per type, and each type gets only the checked permissions it supports. For example, Table and Sequence with SELECT and USAGE in schema scope generate:
+
+```sql
+GRANT SELECT ON ALL TABLES IN SCHEMA "example_schema" TO "example_app";
+GRANT SELECT, USAGE ON ALL SEQUENCES IN SCHEMA "example_schema" TO "example_app";
+```
+
+Every checked type must receive at least one checked permission. Otherwise the form shows an error, for example when only USAGE is checked with Table. A permission that no checked type supports is also an error. **ALL PRIVILEGES** is applied per type. Named objects apply the same names to each type, so schema-wide scope is usually better when types differ. Columns, large objects, and parameters need their own fields and are always granted one type at a time. Checking one clears the other types. Named functions, procedures, and routines also need their own operation to identify an exact overload.
 
 ## Choose multiple permissions or roles
 
-**Object grants** and **Defaults** use checkbox groups. **Select all** checks every listed individual permission. **Clear all** unchecks the group. The separate **ALL PRIVILEGES** checkbox generates PostgreSQL's `ALL PRIVILEGES` syntax and cannot stay checked with individual permissions.
+**Grants** uses checkbox groups for permissions. **Select all** checks every listed individual permission. **Clear all** unchecks the group. The separate **ALL PRIVILEGES** checkbox generates PostgreSQL's `ALL PRIVILEGES` syntax and cannot stay checked with individual permissions.
 
-Changing the object type keeps only shared individual selections. It clears **ALL PRIVILEGES** rather than applying broad access to another object type. If no selections remain, choose permissions before adding the operation.
+Changing the object types keeps only shared individual selections. It clears **ALL PRIVILEGES** rather than applying broad access to another object type. If no selections remain, choose permissions before adding the operation.
 
-**Membership** combines checked predefined roles with the **Custom roles** text list. Duplicate names appear once in the generated membership statement. No predefined roles are checked automatically, and the custom list starts empty. Select at least one role or enter a custom name. **Select all** includes every available predefined role, including powerful roles on PostgreSQL. Review the role descriptions and generated warnings before adding the operation. Unavailable roles stay disabled for the selected platform and major version.
+**Membership** combines the **Roles to grant** text list with roles checked under the collapsed **Predefined PostgreSQL roles** section. Duplicate names appear once in the generated membership statement. No predefined roles are checked automatically, and the text list starts empty. Enter a role or check a predefined role. **Select all** includes every available predefined role, including powerful roles on PostgreSQL. Review the role descriptions and generated warnings before adding the operation. Unavailable roles stay disabled for the selected platform and major version.
 
 Single-choice settings stay as dropdowns or profile buttons. Schema, object, creator, and custom role names remain text inputs because the site does not connect to a database.
 
 ## Review requests and inspect the result
 
-The **Permission summary** shows queued requests in their original order. Expand each item to see recipients, privileges, object or schema scope, grant options, creators, and memberships. Profiles expand into group creation, existing-object grants, future defaults, and membership. FDW items include role mappings, import or manual-table intent, and local grants. Form drafts are not included.
+**Script plan** lists queued requests in their original order. Expand each item to see recipients, privileges, object or schema scope, grant options, creators, and memberships. Profiles expand into group creation, existing-object grants, future defaults, and membership. Multi-type grants list one line per type. Blank creators are shown as "no creators listed", meaning only objects created by the role that runs the script (`CURRENT_USER`). FDW items include role mappings, import or manual-table intent, and local grants. Form drafts are not included.
 
 The summary describes intent, not verified database state or a calculated final ACL. Duplicate and conflicting requests remain visible. A later REVOKE can supersede an earlier GRANT.
 
-Select **Setup SQL** to copy or download `permission-plan.sql`. After executing that reviewed script yourself, select **Verification SQL** to export `permission-verification.sql`. The site never runs either script. Verification consists only of SELECT queries against local catalogs and built-in privilege inquiry functions. It does not execute target routines, create future test objects, retrieve mapping credentials, or contact foreign servers.
+**Copy SQL** and **Download .sql** export the setup script, `permission-plan.sql`. After executing that reviewed script yourself, expand **Verification SQL** under the preview to copy or download `permission-verification.sql`. Opening it does not replace the setup preview. The site never runs either script. Verification consists only of SELECT queries against local catalogs and built-in privilege inquiry functions. It does not execute target routines, create future test objects, retrieve mapping credentials, or contact foreign servers.
 
 Each inspection result contains the requested operation and JSON evidence. Compare these fields yourself:
 
 - `explicit_acl_privilege` and `explicit_acl_grant_option` describe stored direct ACL entries for the exact recipient. A null ACL has no explicit entries, even when PostgreSQL grants built-in access.
 - `effective_privilege` and `effective_grant_option` separately include PostgreSQL's effective access rules. Inherited roles, PUBLIC, owners, and superusers can retain access after a direct revoke. These functions do not prove row access through RLS or that a view or foreign table supports the requested operation.
-- Default-ACL evidence distinguishes explicit global and per-schema rows, global or built-in privileges, and their additive combination for the exact creator and recipient. It reports configured defaults, not a live test of future object creation or inherited access.
+- Default-ACL evidence distinguishes explicit global and per-schema rows, global or built-in privileges, and their additive combination for the exact creator and recipient. With blank creators, it inspects `CURRENT_USER`, so run it as the role that ran the setup. It reports configured defaults, not a live test of future object creation or inherited access.
 - Membership evidence includes direct rows and grantors, ADMIN, indirect membership, and immediately inherited role usage. PostgreSQL 16–17 also report per-membership INHERIT and SET. Versions 14–15 report the member role's INHERIT attribute instead.
 - FDW evidence includes extension/server presence, mapping presence, local foreign-table inventories, owners, column types, nullability, and local ACLs. It selects only mapping identifiers from `pg_user_mappings`, never `umoptions`. Remote usernames, passwords, connection options, TLS, remote authority, column mapping options, and import completeness are not verified.
 
@@ -92,25 +112,31 @@ Each object category supports GRANT, REVOKE, ALL PRIVILEGES, grant options, gran
 - Routine overloads use one routine name and explicit input argument types per operation. Leave argument types blank for a zero-argument routine. Omit pure OUT arguments. Unusual signatures must be reviewed and adapted manually.
 - Default privileges support future tables, sequences, routines, types including domains, and schemas. Defaults for schemas must be database-global, without `IN SCHEMA`.
 - Routine defaults use `ON FUNCTIONS`, which includes both functions and procedures for all supported majors. Default privileges cannot separate functions from procedures.
-- Multiple creator roles, recipient roles, and schema names are supported.
+- Multiple creator roles, recipient roles, and schema names are supported. Creators are optional. Without creators, `FOR ROLE` is omitted and defaults apply only to objects later created by the role that runs the script.
 
 PostgreSQL predefined roles appear separately in **Membership**. The list follows the selected major. `pg_database_owner` is disabled because membership is implicit. Server-file and server-program roles are disabled for Aurora. Other Aurora built-in assignments require release-specific availability and grant authority. AWS-managed `rds*` and `aurora*` roles are not generated.
 
 ## Access profiles
 
-- **Reader** grants database CONNECT, schema USAGE, and table SELECT on existing and future tables.
-- **Read + write** adds INSERT, UPDATE, DELETE, and sequence USAGE. It does not add TRUNCATE, sequence UPDATE/setval, schema CREATE, or routine execution.
-- **Routine executor** grants database CONNECT, schema USAGE, and EXECUTE on all existing and future routines in the selected schemas. Use an allowlist in **Object grants** instead if not every routine is suitable.
+- **Reader** grants database CONNECT and schema USAGE, plus, on existing objects and as future defaults in the selected schemas:
+  - SELECT on tables, views, and foreign tables
+  - SELECT and USAGE on sequences
+  - EXECUTE on functions. Existing grants use `ALL FUNCTIONS` (not procedures). Defaults use `ON FUNCTIONS`, which PostgreSQL also applies to future procedures.
+  - USAGE on types, as a future default only. PostgreSQL has no `GRANT ... ON ALL TYPES IN SCHEMA`, so add a named type grant for existing types.
+- **Read + write** includes everything in Reader, plus INSERT, UPDATE, DELETE, and TRUNCATE on tables. It does not add sequence UPDATE/setval or schema CREATE.
+- **Routine executor** grants database CONNECT, schema USAGE, and EXECUTE on all existing and future routines in the selected schemas. Use named routines in **Grants** instead if not every routine is suitable.
+
+Sequence USAGE allows `nextval`, which increments sequences. EXECUTE on all functions in a schema includes functions that write data or run as SECURITY DEFINER. Use **Grants** with named objects if that is too broad.
 
 The setup creates a NOLOGIN group with conservative attributes. On reruns it rejects an existing LOGIN, SUPERUSER, CREATEDB, CREATEROLE, REPLICATION, BYPASSRLS, or NOINHERIT group. It does not silently convert existing roles. Compatible existing groups may still own objects or have extra permissions and memberships. The script adds access without resetting these.
 
-Creator roles and member users must already exist. Login creation and passwords are outside this app. On PostgreSQL 16–17, setup grants membership with `ADMIN FALSE, INHERIT TRUE, SET FALSE`. On 14–15, automatic inheritance follows the member role's INHERIT attribute, and membership allows SET ROLE. The setup does not change user-wide attributes on those versions.
+Listed creator roles and member users must already exist. Leave creators blank to cover only objects created by the role that runs the script. Login creation and passwords are outside this app. On PostgreSQL 16–17, setup grants membership with `ADMIN FALSE, INHERIT TRUE, SET FALSE`. On 14–15, automatic inheritance follows the member role's INHERIT attribute, and membership allows SET ROLE. The setup does not change user-wide attributes on those versions.
 
 ## Security boundaries
 
 Roles and memberships are cluster-wide. Most object grants and all default privileges are database-specific. Database and tablespace grants name cluster objects. Run each script in its intended database and repeat database-local configuration for other databases.
 
-Defaults follow the role actually creating an object, not merely its schema owner or a role it belongs to. Configure every creator or use `SET ROLE` consistently during deployment.
+Defaults follow the role actually creating an object, not merely its schema owner or a role it belongs to. Configure every creator or use `SET ROLE` consistently during deployment. Blank creators configure only the role that runs the script, not other owner or creator roles.
 
 Per-schema defaults add to global defaults. A per-schema REVOKE cannot cancel global grants or built-in PUBLIC permissions. PostgreSQL normally grants PUBLIC EXECUTE on new routines and PUBLIC USAGE on new types. Restricting that access needs a global default REVOKE for each creator and separate revokes on existing objects. Revocation can break dependent applications.
 
@@ -145,9 +171,9 @@ python3 -m http.server 8086 --bind 127.0.0.1
 SITE_URL=http://127.0.0.1:8086/ CHROME_BIN=/usr/bin/google-chrome npm run test:ui
 ```
 
-Set `ARTIFACTS` to change the screenshot and download output directory. The default is `/workspace/pg-role-grantor-artifacts`. The browser suite verifies the actual clipboard, downloaded bytes, offline reload, keyboard tabs, validation, and both responsive layouts. It also rejects unexpected external HTTP requests and browser errors.
+Set `ARTIFACTS` to change the screenshot and download output directory. The default is `/workspace/pg-role-grantor-artifacts`. The browser suite verifies the actual clipboard, downloaded bytes, offline reload, the operation dropdown, the Grants toggle, placeholders, keyboard controls, validation, and both responsive layouts. It also rejects unexpected external HTTP requests and browser errors.
 
-Verified in this build: 73 generator and review tests, 93 privilege SQL integration checks plus 149 read-only verification checks, and 52 FDW integration checks plus 41 FDW read-only inspection checks on PostgreSQL **17.5**, and 29 general browser checks, 24 FDW browser checks, 126 reset browser checks, 169 checkbox browser checks, and 79 summary and verification browser checks on Chrome **156.0.8078.47**. The psql client is 17.11; the tested server is 17.5. Majors 14–16 have catalog and generator tests, not live-engine tests. No Aurora cluster was used.
+Verified in this build (2026-11-11): 79 generator and review tests, and 55 general browser checks, 27 FDW browser checks, 126 reset browser checks, 201 checkbox browser checks, and 87 summary and verification browser checks on Chrome **156.0.8078.47**. The PostgreSQL integration suites were updated for the new profiles, blank creators, and multi-type grants but not rerun in this build, because no local PostgreSQL server was available. They last passed on PostgreSQL **17.5** before this change. Majors 14–16 have catalog and generator tests, not live-engine tests. No Aurora cluster was used.
 
 Run the reset browser suite against the same local server:
 
@@ -155,7 +181,7 @@ Run the reset browser suite against the same local server:
 SITE_URL=http://127.0.0.1:8086/ CHROME_BIN=/usr/bin/google-chrome npm run test:reset-ui
 ```
 
-It checks all six panes, preserved drafts and queued SQL, version-aware defaults, FDW rows and modes, validation cleanup, keyboard activation and focus, Clear plan cancellation and confirmation, and mobile width. Set `SITE_URL` to the deployed HTTPS URL to run browser checks against the public site.
+It checks every operation and both Grants sides, preserved drafts and queued SQL, version-aware defaults, FDW rows and modes, validation cleanup, keyboard activation and focus, Clear plan cancellation and confirmation, and mobile width. Set `SITE_URL` to the deployed HTTPS URL to run browser checks against the public site.
 
 Run the multi-selection browser suite with the same server and test dependency:
 
@@ -163,7 +189,7 @@ Run the multi-selection browser suite with the same server and test dependency:
 SITE_URL=http://127.0.0.1:8086/ CHROME_BIN=/usr/bin/google-chrome npm run test:checkbox-ui
 ```
 
-It checks multi-permission and multi-role SQL, Select all and Clear all, ALL PRIVILEGES exclusivity, empty-choice validation, version and platform restrictions, Reset form, preserved queued SQL and other drafts, keyboard controls, offline generation, and desktop and mobile layouts.
+It checks multi-type, multi-permission, and multi-role SQL, the More disclosure, exclusive single-type kinds, Existing / Future drafts, Select all and Clear all, ALL PRIVILEGES exclusivity, empty-choice validation, version and platform restrictions, Reset form, preserved queued SQL and other drafts, keyboard controls, offline generation, and desktop and mobile layouts.
 
 Run the summary and verification browser suite with the same server:
 
@@ -171,7 +197,7 @@ Run the summary and verification browser suite with the same server:
 SITE_URL=http://127.0.0.1:8086/ CHROME_BIN=/usr/bin/google-chrome npm run test:review-ui
 ```
 
-This suite checks all operation panes, summary updates, setup and verification modes, actual clipboard and downloaded bytes, draft preservation, reset, version restrictions, keyboard controls, mobile layout, and offline generation. The local PostgreSQL suites also execute the generated inspection queries in read-only transactions before and after permission changes.
+This suite checks every operation, the expandable script plan, blank-creator wording, the Verification SQL disclosure, actual clipboard and downloaded bytes, draft preservation, reset, version restrictions, keyboard controls, mobile layout, and offline generation. The local PostgreSQL suites also execute the generated inspection queries in read-only transactions before and after permission changes.
 
 ## Test native FDW setup
 
@@ -198,6 +224,10 @@ The public site is [manideepgrandhi.github.io/pg-role-grantor](https://manideepg
 Publish these static files to any HTTPS static host. GitHub Pages can serve the repository root from the `main` branch with `.nojekyll`. No build command or environment variables are needed. Relative module and asset paths support a project subpath such as `/pg-role-grantor/`.
 
 Publishing is a separate action from generating SQL. A local build does not prove a public site is deployed. Verify the live URL and browser behavior after deployment. When releasing changed application files, bump the service-worker cache version in `sw.js`.
+
+## Changelog
+
+- **v7** (2026-11-11) Simpler UI: one **Operation** dropdown replaces the tabs, engine and version sit on one line, and the intro and badges are gone. **Grants** merges object grants and defaults with an Existing / Future toggle and multi-select object types (one statement per type, unsupported permissions skipped). Script plan and Permission summary are one expandable list. Verification SQL moved into its own disclosure. Future object creators are optional: blank omits `FOR ROLE`. Optional fields start blank with placeholders. Reader now adds sequence SELECT + USAGE, function EXECUTE, and future type USAGE. Writer adds TRUNCATE. Service-worker cache `pg-role-grantor-v7`.
 
 ## References
 

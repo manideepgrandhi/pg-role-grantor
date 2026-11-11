@@ -148,7 +148,8 @@ try {
     ),
     "f",
   );
-  run(`SET ROLE ${q(member)};TRUNCATE s.existing;`, db, false);
+  run(`SET ROLE ${q(member)};TRUNCATE s.existing;RESET ROLE;`);
+  count++;
   run(`SET ROLE ${q(member)};CREATE TABLE s.denied(x int);`, db, false);
   run(
     `SET ROLE ${q(member)};SELECT setval('s.existing_id_seq',100);`,
@@ -167,6 +168,37 @@ try {
   run(grant({ ...setup, profile: "reader", group: reader, members: readUser }));
   run(`SET ROLE ${q(readUser)};SELECT * FROM s.future;`, db);
   count++;
+  for (const [sqlCheck, expected] of [
+    [
+      `has_sequence_privilege('${readUser}','s.existing_id_seq','SELECT,USAGE')`,
+      "t",
+    ],
+    [
+      `has_sequence_privilege('${readUser}','s.future_id_seq','SELECT,USAGE')`,
+      "t",
+    ],
+    [`has_sequence_privilege('${readUser}','s.existing_id_seq','UPDATE')`, "f"],
+    [`has_function_privilege('${reader}','s.fn(integer)','EXECUTE')`, "t"],
+    [`has_table_privilege('${readUser}','s.future','TRUNCATE')`, "f"],
+    [`has_table_privilege('${member}','s.future','TRUNCATE')`, "t"],
+    [`has_schema_privilege('${readUser}','s','CREATE')`, "f"],
+  ])
+    check(run(`SELECT ${sqlCheck};`), expected);
+  run(
+    `SET ROLE ${q(creator)};CREATE TYPE s.future_mood AS ENUM ('ok');RESET ROLE;`,
+  );
+  // Type USAGE is a default only; PUBLIC also has USAGE, so inspect the ACL itself.
+  check(
+    run(
+      `SELECT EXISTS(SELECT 1 FROM pg_type t, aclexplode(t.typacl) a WHERE t.oid='s.future_mood'::regtype AND a.grantee='${reader}'::regrole AND a.privilege_type='USAGE');`,
+    ),
+  );
+  check(
+    run(
+      `SELECT EXISTS(SELECT 1 FROM pg_type t, aclexplode(t.typacl) a WHERE t.oid='s.mood'::regtype AND a.grantee='${reader}'::regrole);`,
+    ),
+    "f",
+  );
   run(
     `SET ROLE ${q(readUser)};INSERT INTO s.future(value) VALUES('no');`,
     db,
@@ -213,7 +245,68 @@ try {
   );
   check(
     run(
+      `SELECT has_function_privilege('${receiver}','s.future_fn()','EXECUTE');`,
+    ),
+    "f",
+  );
+  // Reader defaults ON FUNCTIONS cover future functions.
+  check(
+    run(
       `SELECT has_function_privilege('${readUser}','s.future_fn()','EXECUTE');`,
+    ),
+  );
+  // Blank creators: defaults apply to the role that runs the script.
+  const ownDefault = {
+    kind: "default",
+    object: "table",
+    creators: "",
+    schemas: "s",
+    grantees: receiver,
+    privileges: ["SELECT"],
+  };
+  run(`SET ROLE ${q(creator)};${grant(ownDefault)}`);
+  run(`SET ROLE ${q(creator)};CREATE TABLE s.own_default(x int);RESET ROLE;`);
+  check(
+    run(`SELECT has_table_privilege('${receiver}','s.own_default','SELECT');`),
+  );
+  const ownEvidence = run(
+    `SET ROLE ${q(creator)};BEGIN READ ONLY;${generateVerification(ctx, [ownDefault]).sql}ROLLBACK;`,
+  )
+    .split("\n")
+    .filter((line) => line.startsWith("{"))
+    .map((line) => JSON.parse(line))
+    .flatMap((x) => x.evidence ?? []);
+  verify(
+    ownEvidence.some(
+      (row) =>
+        row.creator === creator && row.explicit_requested_scope_privilege,
+    ),
+  );
+  run(`SET ROLE ${q(creator)};${grant({ ...ownDefault, action: "revoke" })}`);
+  // Multi-type grant: one statement per type, privileges filtered per type.
+  const multi = {
+    kind: "object",
+    objects: ["table", "sequence"],
+    scope: "all",
+    schemas: "s",
+    grantees: receiver,
+    privileges: ["SELECT", "USAGE"],
+  };
+  run(grant(multi));
+  check(
+    run(
+      `SELECT has_table_privilege('${receiver}','s.existing','SELECT') AND has_sequence_privilege('${receiver}','s.existing_id_seq','SELECT,USAGE');`,
+    ),
+  );
+  verify(
+    inspect([multi])
+      .flatMap((x) => x.evidence)
+      .every((row) => row.explicit_acl_privilege),
+  );
+  run(grant({ ...multi, action: "revoke" }));
+  check(
+    run(
+      `SELECT has_table_privilege('${receiver}','s.existing','SELECT') OR has_sequence_privilege('${receiver}','s.existing_id_seq','USAGE');`,
     ),
     "f",
   );

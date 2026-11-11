@@ -178,8 +178,13 @@ for (const kind of ["reader", "writer", "executor"])
     assert.ok(details.includes("membership access to app"));
     assert.ok(details.includes("NOLOGIN"));
     assert.equal(
-      details.includes("USAGE on all existing SEQUENCES"),
-      kind === "writer",
+      details.includes("SELECT, USAGE on all existing SEQUENCES"),
+      kind !== "executor",
+    );
+    assert.equal(details.includes("TRUNCATE"), kind === "writer");
+    assert.equal(
+      details.includes("USAGE on future TYPES"),
+      kind !== "executor",
     );
     readOnly(generateVerification(ctx, [op]).sql);
   });
@@ -317,4 +322,71 @@ test("summary and verification generation do not mutate source operations", () =
   summarize(ctx, operations);
   generateVerification(ctx, operations);
   assert.equal(JSON.stringify(operations), original);
+});
+
+test("blank creators review and verification inspect the executing role", () => {
+  for (const op of [
+    { ...profile, profile: "reader", creators: "" },
+    {
+      kind: "default",
+      object: "table",
+      creators: "",
+      schemas: "",
+      grantees: "app",
+      privileges: ["SELECT"],
+    },
+  ]) {
+    const summary = summarize(ctx, [op])[0];
+    assert.ok(
+      summary.details.some(
+        (x) => x.includes("no creators listed") && x.includes("CURRENT_USER"),
+      ),
+    );
+    const sql = generateVerification(ctx, [op]).sql;
+    readOnly(sql);
+    assert.ok(sql.includes("(VALUES (CURRENT_USER::text)) wanted(name)"));
+    assert.ok(!sql.includes("VALUES )"));
+  }
+  assert.ok(
+    summarize(ctx, [{ ...profile, creators: "" }])[0].title.includes(
+      "executing role",
+    ),
+  );
+  const named = generateVerification(ctx, [profile]).sql;
+  assert.ok(named.includes("(VALUES (E'owner')) wanted(name)"));
+  assert.ok(!named.includes("CURRENT_USER::text"));
+});
+test("multi-type grants expand into per-type review lines and inspections", () => {
+  const op = {
+    kind: "object",
+    objects: ["table", "sequence"],
+    scope: "all",
+    schemas: "s",
+    privileges: ["SELECT", "USAGE"],
+    grantees: "app",
+  };
+  assert.deepEqual(
+    expandOperation(ctx, op).map((x) => [x.object, x.privileges]),
+    [
+      ["table", ["SELECT"]],
+      ["sequence", ["SELECT", "USAGE"]],
+    ],
+  );
+  const [summary] = summarize(ctx, [op]);
+  assert.match(
+    summary.title,
+    /GRANT SELECT, USAGE on existing Table \/ view \/ foreign table \+ Sequence to app/,
+  );
+  assert.deepEqual(summary.details, [
+    "GRANT SELECT on all existing TABLES in schemas s to app",
+    "GRANT SELECT, USAGE on all existing SEQUENCES in schemas s to app",
+  ]);
+  const sql = generateVerification(ctx, [op]).sql;
+  readOnly(sql);
+  assert.ok(sql.includes("c.relkind='S'"));
+  assert.ok(sql.includes("c.relkind IN ('r','p','v','m','f')"));
+  assert.equal(sql.match(/-- Operation 1:/g).length, 2);
+  const defaults = { ...op, kind: "default", creators: "owner" };
+  assert.equal(summarize(ctx, [defaults])[0].details.length, 2);
+  readOnly(generateVerification(ctx, [defaults]).sql);
 });

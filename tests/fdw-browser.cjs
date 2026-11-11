@@ -29,9 +29,16 @@ const path = require("node:path");
         external.push(r.url());
     });
     await page.goto(url, { waitUntil: "networkidle0" });
-    await page.click("#tab-fdw");
+    await page.select("#operation", "fdw");
     check(await page.$$eval("input[type=password]", (els) => els.length), 0);
     check(await page.$eval("#sslmode", (e) => e.value), "verify-full");
+    // TLS options stay collapsed; the optional CA path starts blank.
+    check(await page.$eval("#tls-options", (e) => e.open), false);
+    check(await page.$eval("#sslrootcert", (e) => e.value), "");
+    check(
+      await page.$eval("#sslrootcert", (e) => e.placeholder),
+      "/path/to/root.crt",
+    );
     check(await page.$$eval(".mapping-row", (els) => els.length), 2);
     check(await page.$eval("#importAs", (e) => e.value), "example_importer");
     await page.click("#add-mapping");
@@ -98,8 +105,8 @@ const path = require("node:path");
     check(await page.$eval("#plan-count", (e) => e.textContent), "3");
     page.once("dialog", (dialog) => dialog.accept());
     await page.click("#clear");
-    await page.click("#tab-profile");
-    await page.click("#tab-fdw");
+    await page.select("#operation", "profile");
+    await page.select("#operation", "fdw");
     await page.click("#reset-form");
     await page.setViewport({ width: 390, height: 844 });
     await page.evaluate(() => scrollTo(0, 0));
@@ -131,7 +138,7 @@ const path = require("node:path");
     );
     await page.setOfflineMode(true);
     await page.reload({ waitUntil: "networkidle0" });
-    await page.click("#tab-fdw");
+    await page.select("#operation", "fdw");
     await page.click("button[type=submit]");
     check(
       (await page.$eval("#sql-code", (e) => e.textContent)).includes(

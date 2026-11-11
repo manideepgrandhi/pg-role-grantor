@@ -6,21 +6,50 @@ Every name in this file and the generated examples is a placeholder. Existing da
 
 In **Access setup**, select **Read + write** and enter:
 
-| Field                    | Example value    |
-| ------------------------ | ---------------- |
-| Group role               | `example_writer` |
-| Target database          | `example_db`     |
-| Schemas                  | `example_schema` |
-| Future object creators   | `example_owner`  |
-| Assign to existing users | `app`            |
+| Field                   | Example value    |
+| ----------------------- | ---------------- |
+| Group role              | `example_writer` |
+| Target database         | `example_db`     |
+| Schemas                 | `example_schema` |
+| Future object creators  | `example_owner`  |
+| Assign to users / roles | `app`            |
 
-Here `app` is an example existing login, not an account created by the generator. Add the setup and download the script. The script creates `example_writer` if missing, grants SELECT, INSERT, UPDATE, DELETE and sequence USAGE, sets defaults for objects created by `example_owner`, and assigns the group to `app`.
+Creators and users are optional and start blank. Here `app` is an example existing login, not an account created by the generator. Add the setup and download the script. The script creates `example_writer` if missing and grants, on existing objects and as defaults for objects created by `example_owner`:
+
+- SELECT, INSERT, UPDATE, DELETE, TRUNCATE on tables
+- SELECT, USAGE on sequences
+- EXECUTE on functions
+- USAGE on future types (defaults only)
+
+It then assigns the group to `app`. **Reader** grants the same without INSERT, UPDATE, DELETE, and TRUNCATE.
 
 The generated PostgreSQL 17 [writer setup](examples/writer.sql) is standalone. No `role_manager.provision` installation is needed.
 
+## Leave creators blank
+
+If the role that runs the script also creates the objects, leave **Future object creators** blank. The defaults omit `FOR ROLE`:
+
+```sql
+ALTER DEFAULT PRIVILEGES IN SCHEMA "example_schema"
+  GRANT SELECT ON TABLES TO "example_reader";
+```
+
+They apply only to objects later created by that executing role, not by other owners. Verification SQL inspects `CURRENT_USER`, so run it as the same role.
+
+## Grant tables and sequences in one step
+
+In **Operation**, choose **Grants** and keep **Existing objects**. Check **Table / view / foreign table** and **Sequence**, choose **All existing objects in schemas**, and check SELECT and USAGE. One **Add to script** generates:
+
+```sql
+GRANT SELECT ON ALL TABLES IN SCHEMA "example_schema" TO "example_app";
+GRANT SELECT, USAGE ON ALL SEQUENCES IN SCHEMA "example_schema" TO "example_app";
+```
+
+USAGE is skipped for tables because tables do not support it. Switch the toggle to **Future objects** to do the same for objects created later.
+
 ## Give access to one routine overload
 
-In **Object grants**, select **Function**, name `example_schema.lookup`, and enter one input type per line:
+In **Grants**, keep **Existing objects**, check only **Function** (under **More**), name `example_schema.lookup`, and enter one input type per line:
 
 ```text
 integer
@@ -37,7 +66,7 @@ A named routine requires exact input types. This grant does not revoke PUBLIC EX
 
 ## Restrict future routine execution
 
-In **Defaults**, choose **All routine kinds**. Set creator `example_owner`, leave schema scope blank, target PUBLIC, choose REVOKE, and select EXECUTE.
+In **Grants**, switch to **Future objects** and check only **All routine kinds**. Set creator `example_owner`, leave schema scope blank, target PUBLIC, choose REVOKE, and select EXECUTE.
 
 The generated statement is global within the current database:
 
@@ -50,7 +79,7 @@ Add a second default operation that grants EXECUTE to `example_executor` in `exa
 
 ## Grant a subset of columns
 
-In **Object grants**, select **Table columns**. Name `example_schema.contacts`, enter columns `display_name,email`, and select SELECT. Add a separate UPDATE operation if the column set differs.
+In **Grants**, check **Table columns** under **More**. Name `example_schema.contacts`, enter columns `display_name,email`, and select SELECT. Add a separate UPDATE operation if the column set differs.
 
 ```sql
 GRANT SELECT ("display_name", "email") ON TABLE "example_schema"."contacts" TO "example_app";
@@ -68,13 +97,13 @@ REVOKE GRANT OPTION FOR SELECT ON TABLE "example_schema"."contacts" FROM "exampl
 
 ## Add a PostgreSQL monitoring role
 
-In **Membership**, select `pg_monitor` in the predefined-role list. Enter the intended existing member, then review the cluster-wide scope warning. These built-in roles are not the same as scoped reader/writer templates.
+In **Membership**, expand **Predefined PostgreSQL roles** and check `pg_monitor`. Enter the intended existing member, then review the cluster-wide scope warning. These built-in roles are not the same as scoped reader/writer templates.
 
 AWS-managed roles are intentionally not offered. Aurora restrictions and the actual engine release determine what an administrator can grant.
 
 ## Set up FDW with explicit role mappings
 
-Choose **FDW setup** and replace the example connection names. Keep **verify-full** unless your reviewed environment requires another mode.
+Choose **FDW setup** and replace the example connection names. Keep **verify-full** under **TLS options** unless your reviewed environment requires another mode.
 
 Add a mapping for each local execution role:
 
@@ -109,10 +138,10 @@ Existing server and mapping definitions are not overwritten. Choose reviewed new
 ## Review a writer plan before downloading
 
 1. Add the writer setup above to the script plan.
-2. Expand its item under **Permission summary**.
-3. Check the group name, database CONNECT, schema USAGE, table SELECT/INSERT/UPDATE/DELETE, and sequence USAGE.
+2. Expand its item under **Script plan**.
+3. Check the group name, database CONNECT, schema USAGE, table SELECT/INSERT/UPDATE/DELETE/TRUNCATE, sequence SELECT/USAGE, function EXECUTE, and future type USAGE.
 4. Check the future-object creators and the existing member role. On PostgreSQL 16–17, writer setup requests ADMIN false, INHERIT true, and SET false.
-5. Select **Setup SQL** and download the reviewed script.
+5. Select **Download .sql** to save the reviewed script.
 
 Only queued operations appear in the summary. Edits still in a form do not change an already queued request. Remove an operation and add its replacement when needed.
 
@@ -120,11 +149,11 @@ Only queued operations appear in the summary. Edits still in a form do not chang
 
 1. Keep the same plan after downloading setup SQL.
 2. Run the reviewed setup yourself in the intended database.
-3. Select **Verification SQL** and download `permission-verification.sql`.
+3. Expand **Verification SQL** under the preview and download `permission-verification.sql`.
 4. Run that SELECT-only script in the same database, with the same search path and matching major version.
 5. Compare each requested operation with its JSON evidence.
 
-For the writer group, inspect direct table ACLs and sequence USAGE. For the member application role, inspect the membership row and inherited role usage. For each creator, inspect the default-ACL scope and privileges. A configured default does not prove that a future deployment uses that creator role.
+For the writer group, inspect direct table ACLs and sequence SELECT and USAGE. For the member application role, inspect the membership row and inherited role usage. For each creator, inspect the default-ACL scope and privileges. A configured default does not prove that a future deployment uses that creator role.
 
 After a grant-option-only revoke, inspect `explicit_acl_grant_option` separately from `explicit_acl_privilege`. Effective access can remain true through another grant path. A per-schema default REVOKE can leave `global_or_builtin_privilege` true because global defaults are additive.
 

@@ -34,7 +34,35 @@ const path = require("node:path");
     const val = (id) => page.$eval("#" + id, (e) => e.value);
     const set = (id, value) =>
       page.$eval("#" + id, (e, v) => (e.value = v), value);
-    const tab = (name) => page.click("#tab-" + name);
+    // Controls inside collapsed details are opened first, as a user would.
+    const reveal = (selector) =>
+      page
+        .$eval(selector, (e) => {
+          for (
+            let d = e.closest("details");
+            d;
+            d = d.parentElement?.closest("details")
+          )
+            d.open = true;
+        })
+        .catch(() => {});
+    const click = async (selector) => {
+      await reveal(selector);
+      await page.click(selector);
+    };
+    // Grants has an Existing / Future toggle; other operations map one to one.
+    const tab = async (name) => {
+      const grant = name === "object" || name === "default";
+      await page.select("#operation", grant ? "grants" : name);
+      if (grant) await click("#grant-mode-" + name);
+    };
+    const types = () =>
+      page.$$eval("[name=objtype]:checked", (els) => els.map((e) => e.value));
+    const onlyType = async (key) => {
+      await click("#type-" + key);
+      for (const other of await types())
+        if (other !== key) await click("#type-" + other);
+    };
     const has = (id) => page.$("#" + id).then(Boolean);
     const checked = (id) => page.$eval("#" + id, (e) => e.checked);
     const snapshot = () =>
@@ -53,10 +81,10 @@ const path = require("node:path");
       }));
     await page.select("#platform", "aurora");
     await page.select("#version", "14");
-    await page.click("button[type=submit]");
+    await click("button[type=submit]");
     const queuedSQL = await page.$eval("#sql-code", (e) => e.textContent);
     const reset = async () => {
-      await page.click("#reset-form");
+      await click("#reset-form");
       check(await page.$eval("#sql-code", (e) => e.textContent), queuedSQL);
       check(await page.$eval("#plan-count", (e) => e.textContent), "1");
       check([await val("platform"), await val("version")], ["aurora", "14"]);
@@ -70,23 +98,23 @@ const path = require("node:path");
       check(await page.evaluate(() => document.activeElement.id), "reset-form");
     };
     // Keep a profile draft while resetting an unrelated, invalid object form.
-    await page.click("[data-profile=reader]");
+    await click("[data-profile=reader]");
     await set("group", "profile_draft");
     await set("database", "draft_db");
     await tab("object");
-    await page.select("#object", "column");
+    await onlyType("column");
     await set("grantees", "object_draft");
     await set("columns", "private_column");
     await page.select("#action", "revoke");
-    await page.click("#public");
-    await page.click("details.field summary");
-    await page.click("#optionOnly");
+    await click("#public");
+    await click("details.field summary");
+    await click("#optionOnly");
     await page.select("#behavior", "CASCADE");
     await set("targets", "");
-    await page.click("button[type=submit]");
+    await click("button[type=submit]");
     check(await page.$eval("#form-error", (e) => !e.hidden));
     await reset();
-    check(await val("object"), "table");
+    check(await types(), ["table"]);
     check(await val("action"), "grant");
     check(await val("grantees"), "example_app");
     check(await checked("public"), false);
@@ -115,17 +143,17 @@ const path = require("node:path");
     );
     // Each pane resets its own dynamic state, without replacing other drafts.
     await tab("default");
-    await page.select("#object", "schema");
+    await onlyType("schema");
     await set("creators", "creator_draft");
     await set("schemas", "invalid_nested_schema");
-    await page.click("button[type=submit]");
+    await click("button[type=submit]");
     check(await page.$eval("#form-error", (e) => !e.hidden));
     await reset();
-    check(await val("object"), "table");
-    check(await val("creators"), "example_owner");
-    check(await val("schemas"), "example_schema");
+    check(await types(), ["table"]);
+    check(await val("creators"), "");
+    check(await val("schemas"), "");
     await tab("membership");
-    await page.click('[name=builtin][value="pg_monitor"]');
+    await click('[name=builtin][value="pg_monitor"]');
     await page.select("#action", "revoke");
     await page.select("#revokeOption", "ADMIN");
     await page.select("#behavior", "CASCADE");
@@ -140,7 +168,7 @@ const path = require("node:path");
     check(await has("set"), false);
     await tab("group");
     await set("group", "");
-    await page.click("button[type=submit]");
+    await click("button[type=submit]");
     check(await page.$eval("#form-error", (e) => !e.hidden));
     await reset();
     check(await val("group"), "example_access");
@@ -159,9 +187,9 @@ const path = require("node:path");
     await tab("fdw");
     await set("host", "edited.example.invalid");
     await set("port", "6543");
-    await page.click("#add-mapping");
+    await click("#add-mapping");
     await page.select("#mode", "manual");
-    await page.click("#add-column");
+    await click("#add-column");
     await set("localTable", "manual_draft");
     await page.select("#sslmode", "disable");
     await tab("object");
@@ -174,7 +202,7 @@ const path = require("node:path");
     check(await val("localTable"), "manual_draft");
     check(await page.$$eval(".mapping-row", (els) => els.length), 3);
     check(await page.$$eval(".column-row", (els) => els.length), 3);
-    await page.click("#add-mapping");
+    await click("#add-mapping");
     check(await page.$$eval(".mapping-row", (els) => els.length), 4);
     check(
       await page.$$eval(
@@ -183,7 +211,7 @@ const path = require("node:path");
       ),
     );
     await set("port", "invalid");
-    await page.click("button[type=submit]");
+    await click("button[type=submit]");
     check(await page.$eval("#form-error", (e) => !e.hidden));
     await reset();
     check(await val("mode"), "import");
@@ -243,12 +271,12 @@ const path = require("node:path");
       prompt = { type: dialog.type(), message: dialog.message() };
       await dialog.dismiss();
     });
-    await page.click("#clear");
+    await click("#clear");
     check(prompt.type, "confirm");
     check(prompt.message.includes("current form"));
     check(await snapshot(), before);
     page.once("dialog", (dialog) => dialog.accept());
-    await page.click("#clear");
+    await click("#clear");
     check(await page.$eval("#plan-count", (e) => e.textContent), "0");
     check(await val("group"), "keep_this_form");
     check([await val("platform"), await val("version")], ["aurora", "14"]);
@@ -264,39 +292,34 @@ const path = require("node:path");
       dialog.dismiss();
     };
     page.on("dialog", dismiss);
-    await page.click("#clear");
+    await click("#clear");
     await page.evaluate(() => new Promise(requestAnimationFrame));
     page.off("dialog", dismiss);
     check(unexpected, 0);
     // New engine versions rebuild defaults rather than restoring incompatible controls.
     await page.select("#version", "17");
     await tab("object");
-    await page.select("#object", "parameter");
-    await page.click("#reset-form");
-    check(await val("object"), "table");
+    await onlyType("parameter");
+    await click("#reset-form");
+    check(await types(), ["table"]);
     check(
       await page.$$eval("[name=privilege]", (els) =>
         els.some((e) => e.value === "MAINTAIN"),
       ),
     );
     await tab("membership");
-    await page.click("#inherit");
-    await page.click("#set");
-    await page.click("#admin");
-    await page.click("#reset-form");
+    await click("#inherit");
+    await click("#set");
+    await click("#admin");
+    await click("#reset-form");
     check(
       [await checked("admin"), await checked("inherit"), await checked("set")],
       [false, true, true],
     );
     await page.select("#version", "14");
     await tab("object");
-    await page.click("#reset-form");
-    check(
-      await page.$$eval("#object option", (els) =>
-        els.some((e) => e.value === "parameter"),
-      ),
-      false,
-    );
+    await click("#reset-form");
+    check(await page.$("#type-parameter").then(Boolean), false);
     await page.setViewport({ width: 390, height: 844 });
     await page.$eval(".form-actions", (e) =>
       e.scrollIntoView({ block: "center" }),
@@ -318,7 +341,7 @@ const path = require("node:path");
     check(errors, []);
     check(externalRequests, []);
     console.log(
-      `PASS: ${count} reset browser checks on ${await browser.version()}. Six panes, preserved drafts/SQL/engine, FDW rows and modes, validation cleanup, Enter/Space focus, version-aware defaults, Clear plan cancel/confirm/empty, and mobile layout.`,
+      `PASS: ${count} reset browser checks on ${await browser.version()}. Operation dropdown panes and Existing / Future drafts, preserved drafts/SQL/engine, FDW rows and modes, validation cleanup, Enter/Space focus, version-aware defaults, Clear plan cancel/confirm/empty, and mobile layout.`,
     );
   } finally {
     await browser.close();

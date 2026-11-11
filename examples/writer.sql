@@ -6,6 +6,10 @@
 -- Access is additive through direct grants, membership, PUBLIC, ownership, and security-definer routines. Reader does not guarantee read-only access. RLS remains unchanged.
 -- TABLE syntax also covers views and foreign tables. Actual operations depend on the relation kind, view rules, and foreign server support.
 -- Defaults affect only future objects created by the listed creator roles in this database. Membership does not inherit creator defaults; use SET ROLE during deployment or configure every actual creator.
+-- Routines normally have PUBLIC EXECUTE. A SECURITY DEFINER routine may expose more access than table grants. Use exact input argument types to select an overload; omit pure OUT arguments.
+-- New routines normally grant PUBLIC EXECUTE, and new types grant PUBLIC USAGE. Removing these requires a global default REVOKE per creator and separate revokes on existing objects. Routine defaults include both functions and procedures.
+-- Sequence USAGE allows nextval, which increments sequences. EXECUTE on all functions in these schemas includes functions that write data or run as SECURITY DEFINER.
+-- PostgreSQL has no GRANT ... ON ALL TYPES IN SCHEMA. Type USAGE is a future default only; add a named type grant for existing types.
 -- Memberships apply across the cluster. Existing indirect memberships and grantors can preserve access after a revoke.
 -- The setup refuses LOGIN or elevated existing group roles. It adds permissions without clearing existing ACLs, ownership, memberships, or default privileges. Creator and member roles must already exist. No passwords or login roles are created.
 
@@ -41,15 +45,23 @@ GRANT CONNECT ON DATABASE "example_db" TO "example_writer";
 
 GRANT USAGE ON SCHEMA "example_schema" TO "example_writer";
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA "example_schema" TO "example_writer";
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON ALL TABLES IN SCHEMA "example_schema" TO "example_writer";
 
 ALTER DEFAULT PRIVILEGES FOR ROLE "example_owner" IN SCHEMA "example_schema"
-  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO "example_writer";
+  GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON TABLES TO "example_writer";
 
-GRANT USAGE ON ALL SEQUENCES IN SCHEMA "example_schema" TO "example_writer";
+GRANT SELECT, USAGE ON ALL SEQUENCES IN SCHEMA "example_schema" TO "example_writer";
 
 ALTER DEFAULT PRIVILEGES FOR ROLE "example_owner" IN SCHEMA "example_schema"
-  GRANT USAGE ON SEQUENCES TO "example_writer";
+  GRANT SELECT, USAGE ON SEQUENCES TO "example_writer";
+
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA "example_schema" TO "example_writer";
+
+ALTER DEFAULT PRIVILEGES FOR ROLE "example_owner" IN SCHEMA "example_schema"
+  GRANT EXECUTE ON FUNCTIONS TO "example_writer";
+
+ALTER DEFAULT PRIVILEGES FOR ROLE "example_owner" IN SCHEMA "example_schema"
+  GRANT USAGE ON TYPES TO "example_writer";
 
 GRANT "example_writer" TO "app" WITH ADMIN FALSE, INHERIT TRUE, SET FALSE;
 

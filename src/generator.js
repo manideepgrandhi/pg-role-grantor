@@ -47,7 +47,7 @@ function permissionList(op, entry) {
     fail("Choose ALL PRIVILEGES or individual permissions, not both.");
   return [...new Set(list)];
 }
-function objectGrant(ctx, op, warnings) {
+function grantOne(ctx, op, warnings) {
   const entry = catalog(ctx.version)[op.object];
   if (!entry) fail("Object type is not available in the selected version.");
   const perms = permissionList(op, entry);
@@ -108,7 +108,7 @@ function objectGrant(ctx, op, warnings) {
     );
   return clauses(op, text, target);
 }
-function defaultGrant(ctx, op, warnings) {
+function defaultOne(ctx, op, warnings) {
   const entry = catalog(ctx.version)[op.object];
   if (!entry?.defaults)
     fail(
@@ -117,8 +117,11 @@ function defaultGrant(ctx, op, warnings) {
   const schemas = names(op.schemas, true);
   if (op.object === "schema" && schemas.length)
     fail("Default privileges on schemas must be global, without IN SCHEMA.");
+  const creators = names(op.creators, true);
   warnings.push(
-    "Defaults affect only future objects created by the listed creator roles in this database. Membership does not inherit creator defaults; use SET ROLE during deployment or configure every actual creator.",
+    creators.length
+      ? "Defaults affect only future objects created by the listed creator roles in this database. Membership does not inherit creator defaults; use SET ROLE during deployment or configure every actual creator."
+      : "No creator roles listed: defaults apply only to objects later created by the role that runs this script (CURRENT_USER), not by other owner or creator roles.",
   );
   if (op.action === "revoke" && schemas.length)
     warnings.push(
@@ -128,7 +131,96 @@ function defaultGrant(ctx, op, warnings) {
     warnings.push(
       "New routines normally grant PUBLIC EXECUTE, and new types grant PUBLIC USAGE. Removing these requires a global default REVOKE per creator and separate revokes on existing objects. Routine defaults include both functions and procedures.",
     );
-  return `ALTER DEFAULT PRIVILEGES FOR ROLE ${quoted(op.creators)}${schemas.length ? ` IN SCHEMA ${schemas.map(identifier).join(", ")}` : ""}\n  ${clauses(op, permissionList(op, entry).join(", "), entry.defaults)}`;
+  return `ALTER DEFAULT PRIVILEGES${creators.length ? ` FOR ROLE ${creators.map(identifier).join(", ")}` : ""}${schemas.length ? ` IN SCHEMA ${schemas.map(identifier).join(", ")}` : ""}\n  ${clauses(op, permissionList(op, entry).join(", "), entry.defaults)}`;
+}
+// Object types that need their own target fields cannot share one grant form.
+export const SINGLE_TYPES = ["column", "largeobject", "parameter"];
+// Expands a multi-type grant into one operation per type, keeping only the
+// privileges each type supports. A legacy single `object` passes through.
+export function splitObjects(ctx, op) {
+  const types = op.objects ?? [op.object];
+  if (!Array.isArray(types) || !types.length)
+    fail("Select at least one object type.");
+  const unique = [...new Set(types)];
+  if (unique.length === 1) {
+    const { objects, ...rest } = op;
+    return [{ ...rest, object: unique[0] }];
+  }
+  const entries = catalog(ctx.version);
+  const list = op.privileges;
+  if (!Array.isArray(list) || !list.length)
+    fail("Select at least one permission.");
+  if (list.includes("ALL PRIVILEGES") && list.length !== 1)
+    fail("Choose ALL PRIVILEGES or individual permissions, not both.");
+  for (const key of unique) {
+    const entry = entries[key];
+    if (!entry) fail("Object type is not available in the selected version.");
+    if (SINGLE_TYPES.includes(key))
+      fail(`${entry.label} needs its own operation. Select it alone.`);
+    if (op.kind === "default" && !entry.defaults)
+      fail(`${entry.label} has no default privileges.`);
+    if (op.kind === "object" && op.scope === "all" && !entry.all)
+      fail(`${entry.label} does not support ALL ... IN SCHEMA.`);
+    if (op.kind === "object" && op.scope !== "all" && entry.routine)
+      fail(`${entry.label} needs its own operation to name an exact overload.`);
+  }
+  if (
+    op.kind === "object" &&
+    op.scope !== "all" &&
+    new Set(unique.map((key) => Boolean(entries[key].qualified))).size > 1
+  )
+    fail(
+      "Named objects of these types use different name formats. Add them as separate operations.",
+    );
+  for (const p of list)
+    if (
+      p !== "ALL PRIVILEGES" &&
+      !unique.some((key) => entries[key].privileges.includes(p))
+    )
+      fail(`${p} is not supported for any selected object type.`);
+  return unique.map((key) => {
+    const privileges = list.includes("ALL PRIVILEGES")
+      ? list
+      : list.filter((p) => entries[key].privileges.includes(p));
+    if (!privileges.length)
+      fail(
+        `None of the selected permissions apply to ${entries[key].label}. Choose ${entries[key].privileges.join(", ")} or clear that type.`,
+      );
+    const { objects, ...rest } = op;
+    return { ...rest, object: key, privileges };
+  });
+}
+function objectGrant(ctx, op, warnings) {
+  return splitObjects(ctx, op)
+    .map((part) => grantOne(ctx, part, warnings))
+    .join("\n");
+}
+function defaultGrant(ctx, op, warnings) {
+  return splitObjects(ctx, op)
+    .map((part) => defaultOne(ctx, part, warnings))
+    .join("\n");
+}
+// Access setup profiles. Executor stays routine-only.
+const READ_GRANTS = [
+  ["object", "table", ["SELECT"]],
+  ["default", "table", ["SELECT"]],
+  ["object", "sequence", ["SELECT", "USAGE"]],
+  ["default", "sequence", ["SELECT", "USAGE"]],
+  ["object", "function", ["EXECUTE"]],
+  ["default", "routine", ["EXECUTE"]],
+  ["default", "type", ["USAGE"]],
+];
+export function profileGrants(profile) {
+  if (profile === "executor")
+    return [
+      ["object", "routine", ["EXECUTE"]],
+      ["default", "routine", ["EXECUTE"]],
+    ];
+  if (profile === "reader") return READ_GRANTS;
+  const write = ["SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE"];
+  return READ_GRANTS.map((grant) =>
+    grant[1] === "table" ? [grant[0], "table", write] : grant,
+  );
 }
 function roleCheck(name, create) {
   const q = identifier(name),
@@ -201,7 +293,7 @@ function profile(ctx, op, warnings) {
   if (/^(pg_|rds|aurora)/i.test(group) || group === "PUBLIC")
     fail("Choose a non-reserved group role name.");
   const schemas = names(op.schemas),
-    creators = names(op.creators),
+    creators = names(op.creators, true),
     members = names(op.members, true);
   if (creators.includes(group) || members.includes(group))
     fail("The access group must differ from creators and members.");
@@ -211,7 +303,7 @@ function profile(ctx, op, warnings) {
   ];
   const base = { grantees: [group], action: "grant" };
   statements.push(
-    objectGrant(
+    grantOne(
       ctx,
       {
         ...base,
@@ -223,40 +315,31 @@ function profile(ctx, op, warnings) {
     ),
   );
   statements.push(
-    objectGrant(
+    grantOne(
       ctx,
       { ...base, object: "schema", targets: schemas, privileges: ["USAGE"] },
       warnings,
     ),
   );
-  const grants =
-    op.profile === "executor"
-      ? [["routine", ["EXECUTE"]]]
-      : [
-          [
-            "table",
-            op.profile === "reader"
-              ? ["SELECT"]
-              : ["SELECT", "INSERT", "UPDATE", "DELETE"],
-          ],
-          ...(op.profile === "writer" ? [["sequence", ["USAGE"]]] : []),
-        ];
-  for (const [object, privileges] of grants) {
+  for (const [kind, object, privileges] of profileGrants(op.profile))
     statements.push(
-      objectGrant(
-        ctx,
-        { ...base, object, privileges, scope: "all", schemas },
-        warnings,
-      ),
+      kind === "object"
+        ? grantOne(
+            ctx,
+            { ...base, object, privileges, scope: "all", schemas },
+            warnings,
+          )
+        : defaultOne(
+            ctx,
+            { ...base, object, privileges, schemas, creators },
+            warnings,
+          ),
     );
-    statements.push(
-      defaultGrant(
-        ctx,
-        { ...base, object, privileges, schemas, creators },
-        warnings,
-      ),
+  if (op.profile !== "executor")
+    warnings.push(
+      "Sequence USAGE allows nextval, which increments sequences. EXECUTE on all functions in these schemas includes functions that write data or run as SECURITY DEFINER.",
+      "PostgreSQL has no GRANT ... ON ALL TYPES IN SCHEMA. Type USAGE is a future default only; add a named type grant for existing types.",
     );
-  }
   if (members.length)
     statements.push(
       memberGrant(

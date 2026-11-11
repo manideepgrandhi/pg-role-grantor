@@ -1,6 +1,6 @@
 # FDW setup reference
 
-The **FDW setup** pane generates `postgres_fdw` configuration for the connected local database. The browser does not connect to either database. The local database server opens the remote connection when you execute `IMPORT FOREIGN SCHEMA` or query a foreign table.
+The **FDW setup** operation generates `postgres_fdw` configuration for the connected local database. The browser does not connect to either database. The local database server opens the remote connection when you execute `IMPORT FOREIGN SCHEMA` or query a foreign table.
 
 ## Connection fields
 
@@ -14,7 +14,7 @@ The **FDW setup** pane generates `postgres_fdw` configuration for the connected 
 | Transport security        | `verify-full`, `require`, or explicit isolated-test `disable`                       |
 | CA path                   | Optional `sslrootcert` file path on the local database server, not a browser upload |
 
-`verify-full` is the default. It requires certificate trust and a certificate matching the remote hostname. `require` encrypts traffic without guaranteeing hostname verification. `disable` provides no TLS protection and displays a danger warning.
+`verify-full` is the default. Transport security and the optional CA path sit under the collapsed **TLS options** section. It requires certificate trust and a certificate matching the remote hostname. `require` encrypts traffic without guaranteeing hostname verification. `disable` provides no TLS protection and displays a danger warning.
 
 The script enables `postgres_fdw` with `CREATE EXTENSION IF NOT EXISTS`. The extension installs the wrapper. The script does not create an arbitrary `FOREIGN DATA WRAPPER`, upgrade an extension, install packages, or change server authentication settings.
 
@@ -58,7 +58,7 @@ The selected import execution role must have its own mapping in this operation. 
 
 Table grants cover only foreign tables on the new server in the selected local schema. They do not grant access to unrelated local tables. Import names and column metadata come from the remote server. Compatible custom types and collations must already exist locally. Remote defaults and generated expressions are not imported. Writer operations involving identity, defaults, or generated columns require a separate review.
 
-A later remote table is not imported automatically. Import and local grants must be reviewed again. Existing default-privilege controls remain available in the separate **Defaults** pane, but FDW setup does not create future remote objects or remote ACLs.
+A later remote table is not imported automatically. Import and local grants must be reviewed again. Existing default-privilege controls remain available under **Grants** → **Future objects**, but FDW setup does not create future remote objects or remote ACLs.
 
 ### Define one foreign table
 
@@ -66,7 +66,7 @@ The form accepts a local table, remote schema and table, and structured column r
 
 Names must be unique. Type inputs accept concrete simple built-ins, simple custom types with optional schema qualification, and arrays. They do not accept SQL expressions, type modifiers, defaults, collations, or constraints. Import is preferable for complex definitions. Remote types, collations, names, and nullability must match the intended local definition.
 
-One manual foreign table is generated per server setup. Bulk definitions use import. This pane is not an editor for adding tables to an already configured server.
+One manual foreign table is generated per server setup. Bulk definitions use import. This form is not an editor for adding tables to an already configured server.
 
 ### Server and mappings only
 
