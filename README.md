@@ -1,5 +1,7 @@
 # PG role grantor
 
+Live site: [manideepgrandhi.github.io/pg-role-grantor](https://manideepgrandhi.github.io/pg-role-grantor/)
+
 A browser-only SQL generator for PostgreSQL and Aurora PostgreSQL. Build a role and privilege plan, inspect the SQL, then copy or download one standalone script.
 
 No database connections, secrets, login screens, execution, analytics, external fonts, or runtime package dependencies. Form values and plans stay in memory. Reloading clears them. A service worker caches application files for offline use after the first successful visit.
@@ -190,6 +192,8 @@ SITE_URL=http://127.0.0.1:8086/ CHROME_BIN=/usr/bin/google-chrome npm run test:f
 This suite checks mapping and column rows, mode selection, duplicate mapping validation, downloaded SQL, mobile labels and width, and FDW generation after an offline reload.
 
 ## Host as a static site
+
+The public site is [manideepgrandhi.github.io/pg-role-grantor](https://manideepgrandhi.github.io/pg-role-grantor/).
 
 Publish these static files to any HTTPS static host. GitHub Pages can serve the repository root from the `main` branch with `.nojekyll`. No build command or environment variables are needed. Relative module and asset paths support a project subpath such as `/pg-role-grantor/`.
 
