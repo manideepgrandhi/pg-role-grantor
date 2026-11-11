@@ -30,7 +30,7 @@ The site creates no remote login, remote grant, IAM role, or local membership as
 
 ## Credential placeholders
 
-The site has no password field. Each mapping receives an unmistakable marker such as `__REPLACE_FDW_1_MAPPING_1_PASSWORD_HEX__`. The marker appears in a plan-wide preflight check and in a guarded mapping block.
+FDW setup has no password field. Each mapping receives an unmistakable marker such as `__REPLACE_FDW_1_MAPPING_1_PASSWORD_HEX__`. The marker appears in a plan-wide preflight check and in a guarded mapping block.
 
 Markers accept only the UTF-8 hex encoding of the password, not raw password text. The generator never receives either value. Hex encoding prevents unknown password quotes, backslashes, or dollar-quote delimiters from breaking generated DO blocks after private editing. Hex is reversible and must be protected like the password itself.
 

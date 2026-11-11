@@ -390,3 +390,26 @@ test("multi-type grants expand into per-type review lines and inspections", () =
   assert.equal(summarize(ctx, [defaults])[0].details.length, 2);
   readOnly(generateVerification(ctx, [defaults]).sql);
 });
+
+test("WITH LOGIN review and verification say a password was set, never its value", () => {
+  const secret = "test-pass'word\\x";
+  const op = { kind: "group", group: "example_login", login: true, password: secret };
+  const review = summarize(ctx, [op])[0];
+  const text = [review.title, ...review.details].join("\n");
+  assert.match(text, /LOGIN role example_login with a password set/);
+  assert.match(text, /keeps its current password/);
+  assert.doesNotMatch(text, /NOLOGIN/);
+  const sql = generateVerification(ctx, [op]).sql;
+  readOnly(sql);
+  assert.match(sql, /with a password set/);
+  assert.match(sql, /Passwords are never read or compared/);
+  for (const leak of [secret, "test-pass", "pass''word", "PASSWORD E'"])
+    for (const output of [text, sql]) assert.ok(!output.includes(leak), leak);
+  assert.equal(JSON.stringify(op.password), JSON.stringify(secret));
+  const group = summarize(ctx, [{ kind: "group", group: "example_access" }])[0];
+  assert.match(group.title, /NOLOGIN group example_access/);
+  assert.doesNotMatch(
+    generateVerification(ctx, [{ kind: "group", group: "g" }]).sql,
+    /password/i,
+  );
+});

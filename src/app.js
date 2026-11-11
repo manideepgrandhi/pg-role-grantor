@@ -5,6 +5,7 @@ import { generate, SINGLE_TYPES } from "./generator.js";
 import { summarize } from "./plan-review.js";
 import { generateVerification } from "./verification.js";
 import { names } from "./sql-input.js";
+import { generatePassword, PASSWORD_LENGTH } from "./password.js";
 const $ = (id) => document.getElementById(id);
 const context = () => ({
   platform: $("platform").value,
@@ -210,9 +211,24 @@ function renderForm() {
     $("action").addEventListener("change", renderMemberOptions);
     renderMemberOptions();
   } else {
-    panel.innerHTML = `<p class="description">Create a reusable NOLOGIN group. Existing LOGIN or elevated roles are rejected.</p>${field("group", "Group role name", "example_access", "Cluster-wide. No login, password, or elevated attributes.")}`;
+    panel.innerHTML = `<p class="description">Create a reusable NOLOGIN group, or check WITH LOGIN for a role that can sign in. Elevated attributes are never set.</p>${field("group", "Role name", "example_access", "Cluster-wide. An existing role with different attributes is rejected.")}<div class="field">${check("login", "WITH LOGIN")}</div><div id="login-fields"></div>`;
+    $("login").addEventListener("change", renderLoginFields);
   }
   describeFields();
+}
+// The password input exists only while WITH LOGIN is checked, so FormData
+// never carries a hidden value. Each check starts from a fresh password.
+function renderLoginFields() {
+  const box = $("login-fields");
+  if (!$("login").checked) {
+    box.replaceChildren();
+    return;
+  }
+  box.innerHTML = `<div class="field"><label for="password">Password</label><div class="password-row"><input id="password" name="password" autocomplete="off" spellcheck="false" aria-describedby="password-hint"><button type="button" class="button small" id="regenerate-password">Regenerate</button></div><p class="hint" id="password-hint">${PASSWORD_LENGTH} random characters from this browser. Editable. Not saved; it appears only in the setup SQL.</p></div>`;
+  $("password").value = generatePassword();
+  $("regenerate-password").addEventListener("click", () => {
+    $("password").value = generatePassword();
+  });
 }
 function switchGrantMode(mode) {
   if (mode === grantMode) return;
@@ -444,8 +460,15 @@ function readOperation() {
     "admin",
     "inherit",
     "set",
+    "login",
   ])
     if ($(key)) op[key] = $(key).checked;
+  if (kind === "group") {
+    if (!op.login) {
+      delete op.login;
+      delete op.password;
+    }
+  } else delete op.password;
   if (kind === "profile") op.profile = profile;
   if (operation === "grants") {
     op.objects = data.getAll("objtype");
@@ -468,7 +491,8 @@ function title(op) {
     return `FDW ${op.mode} · ${op.server} · ${op.mappings.length} role mapping${op.mappings.length === 1 ? "" : "s"}`;
   if (op.kind === "profile")
     return `${op.profile === "writer" ? "Read + write" : op.profile === "reader" ? "Reader" : "Routine executor"} setup · ${op.group}`;
-  if (op.kind === "group") return `Create group · ${op.group}`;
+  if (op.kind === "group")
+    return `${op.login ? "Create login" : "Create group"} · ${op.group}`;
   if (op.kind === "membership")
     return `${op.action === "revoke" ? "Revoke" : "Grant"} membership · ${Array.isArray(op.roles) ? op.roles.join(", ") : op.roles}`;
   return `${op.kind === "default" ? "Future" : "Existing"} ${(op.objects ?? [op.object]).join(" + ")} · ${op.action === "revoke" ? "REVOKE" : "GRANT"} ${op.privileges.join(", ")}`;
@@ -480,7 +504,7 @@ function highlight(sql) {
       if (line.startsWith("--"))
         return `<span class="sql-comment">${esc(line)}</span>`;
       const tokens =
-        /("(?:[^"]|"")*"|E?'(?:[^']|'')*'|\b(?:BEGIN|COMMIT|GRANT|REVOKE|ALTER|DEFAULT|PRIVILEGES|FOR|ROLE|IN|SCHEMA|TABLES|SEQUENCES|FUNCTIONS|TYPES|TO|FROM|ON|WITH|OPTION|SELECT|INSERT|UPDATE|DELETE|TRUNCATE|USAGE|EXECUTE|CONNECT|CREATE|DO|END|IF|THEN|ELSIF|NOT|EXISTS|TRUE|FALSE|ADMIN|INHERIT|SET)\b)/g;
+        /("(?:[^"]|"")*"|E?'(?:[^']|'')*'|\b(?:BEGIN|COMMIT|GRANT|REVOKE|ALTER|DEFAULT|PRIVILEGES|FOR|ROLE|IN|SCHEMA|TABLES|SEQUENCES|FUNCTIONS|TYPES|TO|FROM|ON|WITH|OPTION|SELECT|INSERT|UPDATE|DELETE|TRUNCATE|USAGE|EXECUTE|CONNECT|CREATE|NOLOGIN|LOGIN|PASSWORD|DO|END|IF|THEN|ELSIF|NOT|EXISTS|TRUE|FALSE|ADMIN|INHERIT|SET)\b)/g;
       let out = "",
         last = 0;
       for (const m of line.matchAll(tokens)) {

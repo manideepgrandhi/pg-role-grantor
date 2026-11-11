@@ -835,3 +835,13 @@ footer {
     grid-column: 1 / -1;
   }
 }
+.password-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.password-row input {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, monospace;
+}

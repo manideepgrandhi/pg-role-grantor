@@ -195,6 +195,65 @@ const path = require("node:path");
     page.once("dialog", (dialog) => dialog.accept());
     await page.click("#clear");
     check(await page.$eval("#plan-count", (e) => e.textContent), "0");
+    // Create role WITH LOGIN. Compare passwords only as booleans so a
+    // failure never prints a generated value.
+    const pw = () => page.$eval("#password", (e) => e.value);
+    const allowed = /^[A-Za-z0-9!@#$%^&*_-]{16}$/;
+    await operation("group");
+    check(await page.$eval("#login", (e) => e.checked), false);
+    check(await page.$("#password"), null);
+    check(await page.$$eval("input[type=password]", (els) => els.length), 0);
+    await page.click("#login");
+    const first = await pw();
+    check(allowed.test(first));
+    check(await page.$eval("#password", (e) => e.type), "text");
+    check(await page.$eval("#password", (e) => e.labels[0].textContent), "Password");
+    await page.click("#regenerate-password");
+    const second = await pw();
+    check(allowed.test(second));
+    check(second !== first);
+    // Unchecking removes the input; checking again starts fresh.
+    await page.click("#login");
+    check(await page.$("#password"), null);
+    await page.click("#login");
+    check(allowed.test(await pw()));
+    check((await pw()) !== second);
+    await page.$eval("#group", (e) => (e.value = "example_login"));
+    await page.$eval("#password", (e) => (e.value = "test-pass'word"));
+    await add();
+    let loginSql = await sql();
+    check(loginSql.includes(`CREATE ROLE "example_login" LOGIN PASSWORD E'test-pass''word' NOSUPERUSER`));
+    check(loginSql.includes("-- WARNING: This script contains a login password."));
+    check(
+      await page.$eval("#plan-list summary", (e) => e.textContent.includes("Create login · example_login")),
+    );
+    check(
+      await page.$eval("#plan-list", (e) => e.textContent.includes("password set") && !e.textContent.includes("test-pass")),
+    );
+    check(await page.$eval("#verify-code", (e) => e.textContent.includes("test-pass")), false);
+    // Empty password is rejected in the form.
+    await page.$eval("#password", (e) => (e.value = ""));
+    await add();
+    check(await page.$eval("#form-error", (e) => /password/i.test(e.textContent)));
+    // Unchecked: NOLOGIN group, no PASSWORD clause for the new operation.
+    await page.click("#login");
+    await page.$eval("#group", (e) => (e.value = "example_nologin"));
+    await add();
+    loginSql = await sql();
+    check(loginSql.includes('CREATE ROLE "example_nologin" NOLOGIN NOSUPERUSER'));
+    check(loginSql.match(/PASSWORD E'/g).length, 1);
+    check(
+      await page.$$eval("#plan-list summary", (els) => els.map((e) => e.textContent.slice(2)).join("|")),
+      "Create login · example_login|Create group · example_nologin",
+    );
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.click("#clear");
+    check((await sql()).includes("PASSWORD"), false);
+    check(
+      await page.evaluate(() => localStorage.length + sessionStorage.length + document.cookie.length),
+      0,
+    );
+    await operation("grants");
     // Keyboard: the toggle bar is a pair of buttons.
     await page.focus("#grant-mode-default");
     await page.keyboard.press("Enter");
@@ -233,7 +292,7 @@ const path = require("node:path");
     );
     check(
       await page.evaluate(async () =>
-        (await caches.keys()).includes("pg-role-grantor-v7"),
+        (await caches.keys()).includes("pg-role-grantor-v8"),
       ),
     );
     await page.setOfflineMode(true);
@@ -247,10 +306,13 @@ const path = require("node:path");
     check(await page.$eval("#operation", (e) => e.value), "profile");
     await add();
     check((await sql()).includes("CREATE ROLE"));
+    await operation("group");
+    check(await page.$eval("#login", (e) => e.checked), false);
+    check(await page.$("#password"), null);
     check(external.length, 0);
     check(errors.length, 0);
     console.log(
-      `PASS: ${checks} browser checks. Chromium ${await browser.version()}. Desktop 1440×1100, mobile 390×844, copy, download, offline, validation, version switch, operation dropdown, toggle bar, placeholders, and zero external requests.`,
+      `PASS: ${checks} browser checks. Chromium ${await browser.version()}. Desktop 1440×1100, mobile 390×844, copy, download, offline, validation, version switch, operation dropdown, toggle bar, placeholders, WITH LOGIN password field, and zero external requests.`,
     );
   } finally {
     await browser.close();

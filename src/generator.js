@@ -222,13 +222,42 @@ export function profileGrants(profile) {
     grant[1] === "table" ? [grant[0], "table", write] : grant,
   );
 }
-function roleCheck(name, create) {
+const ROLE_ATTRIBUTES =
+  "NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS INHERIT";
+const ELEVATED =
+  "rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls OR NOT rolinherit";
+// `role` is undefined for a required existing role, `{}` for a NOLOGIN group,
+// or `{ password }` for a LOGIN role. Existing compatible roles are left as is,
+// so a rerun never changes an existing password.
+function roleCheck(name, role) {
   const q = identifier(name),
     l = literal(name);
-  const body = `BEGIN\n  IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = ${l}) THEN\n    ${create ? `CREATE ROLE ${q} NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS INHERIT;` : "RAISE EXCEPTION 'Required role does not exist';"}\n  ${create ? `ELSIF EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = ${l} AND (rolcanlogin OR rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls OR NOT rolinherit)) THEN\n    RAISE EXCEPTION 'Existing group role has incompatible attributes';\n  ` : ""}END IF;\nEND;`;
+  const login = role?.password !== undefined;
+  const create = login
+    ? `CREATE ROLE ${q} LOGIN PASSWORD ${literal(role.password)} ${ROLE_ATTRIBUTES};`
+    : `CREATE ROLE ${q} NOLOGIN ${ROLE_ATTRIBUTES};`;
+  const body = role
+    ? `BEGIN\n  IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = ${l}) THEN\n    ${create}\n  ELSIF EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = ${l} AND (${login ? "NOT rolcanlogin" : "rolcanlogin"} OR ${ELEVATED})) THEN\n    RAISE EXCEPTION '${login ? "Existing login role has incompatible attributes" : "Existing group role has incompatible attributes"}';\n  END IF;\nEND;`
+    : `BEGIN\n  IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = ${l}) THEN\n    RAISE EXCEPTION 'Required role does not exist';\n  END IF;\nEND;`;
   let delimiter = "$grantor$";
   while (body.includes(delimiter)) delimiter = delimiter.slice(0, -1) + "_$";
   return `DO ${delimiter}\n${body}\n${delimiter};`;
+}
+function createRole(op, warnings) {
+  if (/^(pg_|rds|aurora)/i.test(op.group) || op.group === "PUBLIC")
+    fail("Choose a non-reserved group role name.");
+  if (op.login === undefined || op.login === false)
+    return roleCheck(op.group, {});
+  if (op.login !== true) fail("WITH LOGIN must be true or false.");
+  const password = op.password;
+  if (typeof password !== "string" || !password.trim())
+    fail("WITH LOGIN needs a password.");
+  if (/[\x00-\x1f\x7f]/.test(password))
+    fail("Passwords cannot contain control characters.");
+  warnings.push(
+    "An existing role with LOGIN and the same safe attributes is left unchanged, including its current password. Rotate it yourself with ALTER ROLE ... PASSWORD.",
+  );
+  return roleCheck(op.group, { password });
 }
 function memberGrant(ctx, op, warnings) {
   const roles = names(op.roles),
@@ -298,8 +327,8 @@ function profile(ctx, op, warnings) {
   if (creators.includes(group) || members.includes(group))
     fail("The access group must differ from creators and members.");
   const statements = [
-    roleCheck(group, true),
-    ...[...new Set([...creators, ...members])].map((n) => roleCheck(n, false)),
+    roleCheck(group, {}),
+    ...[...new Set([...creators, ...members])].map((n) => roleCheck(n)),
   ];
   const base = { grantees: [group], action: "grant" };
   statements.push(
@@ -389,6 +418,15 @@ export function generate(context, operations) {
       warnings.push(
         "Delegation allows recipients to grant privileges or membership to others.",
       );
+    // Fail closed: only Create role WITH LOGIN may carry a password.
+    if (op.kind !== "fdw" && op.kind !== "group" && op.login !== undefined)
+      fail("WITH LOGIN is only available for Create role.");
+    if (
+      op.kind !== "fdw" &&
+      op.password !== undefined &&
+      !(op.kind === "group" && op.login === true)
+    )
+      fail("A password is accepted only for Create role WITH LOGIN.");
     if (op.kind === "fdw") {
       if (fdwServers.has(op.server))
         fail("Use one FDW setup per server name in a plan.");
@@ -402,12 +440,14 @@ export function generate(context, operations) {
     if (op.kind === "object") return objectGrant(ctx, op, warnings);
     if (op.kind === "default") return defaultGrant(ctx, op, warnings);
     if (op.kind === "membership") return memberGrant(ctx, op, warnings);
-    if (/^(pg_|rds|aurora)/i.test(op.group) || op.group === "PUBLIC")
-      fail("Choose a non-reserved group role name.");
-    return roleCheck(op.group, true);
+    return createRole(op, warnings);
   });
+  if (operations.some((op) => op.kind === "group" && op.login === true))
+    warnings.unshift(
+      "WARNING: This script contains a login password. Statement logs, client history, and this file itself can expose it. Keep the file private and delete it after use.",
+    );
   const uniqueWarnings = [...new Set(warnings)];
-  const header = `-- PG role grantor | ${ctx.platform === "aurora" ? "Aurora PostgreSQL" : "PostgreSQL"} ${ctx.version}\n-- Generated locally. Review permissions, target database, and execution output.\n-- No connection, credentials, or execution is performed by this app.\n`;
+  const header = `-- PG role grantor | ${ctx.platform === "aurora" ? "Aurora PostgreSQL" : "PostgreSQL"} ${ctx.version}\n-- Generated locally. Review permissions, target database, and execution output.\n-- This app makes no connection, executes nothing, and stores no credentials.\n`;
   return {
     sql:
       header +

@@ -311,7 +311,7 @@ export function generateVerification(ctx, operations) {
 -- Default ACLs report configuration per creator: global or built-in defaults plus additive schema entries for the exact recipient, not future-object execution tests.
 -- Catalog access/visibility can limit evidence. Empty schema inventories do not prove remote/import completeness.
 -- FDW mappings report presence only: remote usernames, credentials, connection options, TLS, remote rights and column mappings are NOT inspected.
--- CASCADE impacts on unrelated grantees, RLS, SECURITY DEFINER behavior, and remote authorization are not audited.
+-- CASCADE impacts on unrelated grantees, RLS, SECURITY DEFINER behavior, and remote authorization are not audited.${operations.some((op) => op.kind === "group" && op.login === true) ? "\n-- Login roles report attributes only. Passwords are never read or compared, and none appear in this script." : ""}
 \nSELECT pg_catalog.current_database() AS connected_database, CURRENT_USER AS inspecting_role,
  ${Number(ctx.version)} AS expected_major, pg_catalog.current_setting('server_version_num')::integer / 10000 AS actual_major;\n\n${blocks.join("\n\n")}\n`,
   };

@@ -136,7 +136,9 @@ export function expandOperation(ctx, op) {
 export function describeOperation(ctx, op) {
   const list = (value) => names(value, true).join(", ");
   if (op.kind === "group")
-    return `CREATE or reuse compatible NOLOGIN group ${names([op.group])[0]}; NOLOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOREPLICATION, NOBYPASSRLS, INHERIT`;
+    return op.login === true
+      ? `CREATE or reuse compatible LOGIN role ${names([op.group])[0]} with a password set (an existing compatible role keeps its current password); LOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOREPLICATION, NOBYPASSRLS, INHERIT`
+      : `CREATE or reuse compatible NOLOGIN group ${names([op.group])[0]}; NOLOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOREPLICATION, NOBYPASSRLS, INHERIT`;
   if (op.kind === "membership") {
     const action = op.action === "revoke" ? "REVOKE" : "GRANT";
     const options =

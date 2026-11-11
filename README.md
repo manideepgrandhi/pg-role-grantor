@@ -4,7 +4,7 @@ Live site: [manideepgrandhi.github.io/pg-role-grantor](https://manideepgrandhi.g
 
 A browser-only SQL generator for PostgreSQL and Aurora PostgreSQL. Build a role and privilege plan, inspect the SQL, then copy or download one standalone script.
 
-No database connections, secrets, login screens, execution, analytics, external fonts, or runtime package dependencies. Form values and plans stay in memory. Reloading clears them. A service worker caches application files for offline use after the first successful visit.
+No database connections, stored secrets, login screens, execution, analytics, external fonts, or runtime package dependencies. Form values and plans stay in memory. Reloading clears them. A service worker caches application files for offline use after the first successful visit.
 
 ## Run locally
 
@@ -27,6 +27,10 @@ Open `http://127.0.0.1:8080`. ES modules need HTTP, so opening `index.html` dire
 7. Select **Copy SQL** or **Download .sql**. Run the script yourself in the intended database using an account with the required authority.
 
 Optional fields show a grey placeholder instead of an example value. Required fields keep `example_` values to replace.
+
+**Create role** makes a reusable NOLOGIN group by default. Check **WITH LOGIN** to create a role that can sign in instead. A visible **Password** field appears with a 16-character random password (letters, digits, `!@#$%^&*_-`) generated in your browser with `crypto.getRandomValues`. Edit it or select **Regenerate**. Each check of **WITH LOGIN** starts with a new password, and unchecking removes the field and the `PASSWORD` clause. The password lives only in page memory: it is never saved, sent, or logged by the site, and reloading or **Reset form** clears it. It does appear in the form and in the copied or downloaded setup SQL, because that is the script you run. The script header then warns that statement logs, client history, and the file itself can expose it. The plan, review, and verification SQL say only that a password was set. Verification never reads `rolpassword` or `pg_authid`.
+
+A LOGIN role gets the same conservative attributes as a group: `LOGIN PASSWORD '...' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS INHERIT`. On reruns an existing compatible LOGIN role is left unchanged, including its current password; rotate it yourself with `ALTER ROLE ... PASSWORD`. An existing NOLOGIN, elevated, or NOINHERIT role is rejected, and so is an existing LOGIN role when you create a NOLOGIN group. Empty passwords and control characters are rejected. **Access setup** groups never get LOGIN or a password.
 
 The **FDW setup** operation also generates extension, foreign-server, explicit local-role-to-remote-user mappings, optional schema import or a structured foreign table, and required local grants. Passwords are placeholders only, with blocking preflight guards. Private substitutions accept UTF-8 hex only, never raw passwords in this site. See the [FDW reference](docs/fdw.md).
 
@@ -130,7 +134,7 @@ Sequence USAGE allows `nextval`, which increments sequences. EXECUTE on all func
 
 The setup creates a NOLOGIN group with conservative attributes. On reruns it rejects an existing LOGIN, SUPERUSER, CREATEDB, CREATEROLE, REPLICATION, BYPASSRLS, or NOINHERIT group. It does not silently convert existing roles. Compatible existing groups may still own objects or have extra permissions and memberships. The script adds access without resetting these.
 
-Listed creator roles and member users must already exist. Leave creators blank to cover only objects created by the role that runs the script. Login creation and passwords are outside this app. On PostgreSQL 16–17, setup grants membership with `ADMIN FALSE, INHERIT TRUE, SET FALSE`. On 14–15, automatic inheritance follows the member role's INHERIT attribute, and membership allows SET ROLE. The setup does not change user-wide attributes on those versions.
+Listed creator roles and member users must already exist. Leave creators blank to cover only objects created by the role that runs the script. Access setup never creates logins or takes passwords; use **Create role** with **WITH LOGIN** for that. On PostgreSQL 16–17, setup grants membership with `ADMIN FALSE, INHERIT TRUE, SET FALSE`. On 14–15, automatic inheritance follows the member role's INHERIT attribute, and membership allows SET ROLE. The setup does not change user-wide attributes on those versions.
 
 ## Security boundaries
 
@@ -173,7 +177,7 @@ SITE_URL=http://127.0.0.1:8086/ CHROME_BIN=/usr/bin/google-chrome npm run test:u
 
 Set `ARTIFACTS` to change the screenshot and download output directory. The default is `/workspace/pg-role-grantor-artifacts`. The browser suite verifies the actual clipboard, downloaded bytes, offline reload, the operation dropdown, the Grants toggle, placeholders, keyboard controls, validation, and both responsive layouts. It also rejects unexpected external HTTP requests and browser errors.
 
-Verified in this build (2026-11-11): 79 generator and review tests, and 55 general browser checks, 27 FDW browser checks, 126 reset browser checks, 201 checkbox browser checks, and 87 summary and verification browser checks on Chrome **156.0.8078.47**. The PostgreSQL integration suites were updated for the new profiles, blank creators, and multi-type grants but not rerun in this build, because no local PostgreSQL server was available. They last passed on PostgreSQL **17.5** before this change. Majors 14–16 have catalog and generator tests, not live-engine tests. No Aurora cluster was used.
+Verified in this build (2026-11-11): 89 generator, password, and review tests, and 79 general browser checks, 27 FDW browser checks, 149 reset browser checks, 201 checkbox browser checks, and 87 summary and verification browser checks on Chrome **156.0.8078.47**. The generated LOGIN SQL was syntax-checked with the PostgreSQL 17 parser (libpg-query) using fixed fixture passwords. The PostgreSQL integration suites do not yet cover WITH LOGIN and were not rerun in this build, because no local PostgreSQL server was available. They last passed on PostgreSQL **17.5** before the v7 change. Majors 14–16 have catalog and generator tests, not live-engine tests. No Aurora cluster was used.
 
 Run the reset browser suite against the same local server:
 
@@ -227,6 +231,7 @@ Publishing is a separate action from generating SQL. A local build does not prov
 
 ## Changelog
 
+- **v8** (2026-11-11) **Create role** adds an optional **WITH LOGIN** checkbox. Checking it shows a visible Password field with a 16-character random password from `crypto.getRandomValues` (unbiased, letters, digits, `!@#$%^&*_-`), editable, with **Regenerate**. The SQL becomes `CREATE ROLE ... LOGIN PASSWORD ...` with the same conservative attributes. Reruns leave an existing compatible LOGIN role and its password unchanged, and reject NOLOGIN or elevated roles. The password stays in memory only. It appears in the setup SQL, with a header warning, but never in the plan, review, or verification SQL. Default Create role, Access setup, and FDW are unchanged. Service-worker cache `pg-role-grantor-v8`.
 - **v7** (2026-11-11) Simpler UI: one **Operation** dropdown replaces the tabs, engine and version sit on one line, and the intro and badges are gone. **Grants** merges object grants and defaults with an Existing / Future toggle and multi-select object types (one statement per type, unsupported permissions skipped). Script plan and Permission summary are one expandable list. Verification SQL moved into its own disclosure. Future object creators are optional: blank omits `FOR ROLE`. Optional fields start blank with placeholders. Reader now adds sequence SELECT + USAGE, function EXECUTE, and future type USAGE. Writer adds TRUNCATE. Service-worker cache `pg-role-grantor-v7`.
 
 ## References

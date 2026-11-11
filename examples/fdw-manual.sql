@@ -1,6 +1,6 @@
 -- PG role grantor | PostgreSQL 17
 -- Generated locally. Review permissions, target database, and execution output.
--- No connection, credentials, or execution is performed by this app.
+-- This app makes no connection, executes nothing, and stores no credentials.
 -- Review before running. This app does not connect to a database or verify your grant authority. PostgreSQL can warn and apply only a subset of requested grants; inspect execution output and resulting ACLs.
 -- Roles and memberships are cluster-wide. Object grants and default privileges apply in the connected database. Run each database-specific script in the correct database.
 -- Access is additive through direct grants, membership, PUBLIC, ownership, and security-definer routines. Reader does not guarantee read-only access. RLS remains unchanged.

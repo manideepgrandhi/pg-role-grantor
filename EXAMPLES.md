@@ -95,6 +95,16 @@ Select REVOKE for the intended object grant. Expand **Delegation & revoke option
 REVOKE GRANT OPTION FOR SELECT ON TABLE "example_schema"."contacts" FROM "example_app" RESTRICT;
 ```
 
+## Create a login role
+
+In **Create role**, enter the role name and check **WITH LOGIN**. A 16-character random password fills the visible **Password** field. Select **Regenerate** for another or type your own. Leave **WITH LOGIN** unchecked for a NOLOGIN group. The setup script contains:
+
+```sql
+CREATE ROLE "example_app" LOGIN PASSWORD '...' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS INHERIT;
+```
+
+The real script has your password as an escaped string where `'...'` is shown. Treat the downloaded file as a secret: statement logs, client history, and the file itself can expose the password. A rerun leaves an existing compatible LOGIN role, and its password, unchanged. An existing NOLOGIN or elevated role is rejected. Use **Membership** to grant groups to the new login. The plan and verification SQL only say that a password was set.
+
 ## Add a PostgreSQL monitoring role
 
 In **Membership**, expand **Predefined PostgreSQL roles** and check `pg_monitor`. Enter the intended existing member, then review the cluster-wide scope warning. These built-in roles are not the same as scoped reader/writer templates.

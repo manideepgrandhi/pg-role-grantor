@@ -557,3 +557,91 @@ test("multi-type grants fail closed for empty, unsupported, and incompatible mix
     /ON ALL FUNCTIONS IN SCHEMA "s1" TO "app";\nGRANT EXECUTE ON ALL PROCEDURES/,
   );
 });
+
+// Fixed fixture only; generated passwords never appear in test output.
+const loginOp = {
+  kind: "group",
+  group: "example_login",
+  login: true,
+  password: "test-pass'word\\x",
+};
+test("Create role defaults to the unchanged NOLOGIN group", () => {
+  for (const op of [
+    { kind: "group", group: "example_access" },
+    { kind: "group", group: "example_access", login: false },
+  ]) {
+    const text = sql(op);
+    assert.match(
+      text,
+      /CREATE ROLE "example_access" NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS INHERIT;/,
+    );
+    assert.match(
+      text,
+      /AND \(rolcanlogin OR rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls OR NOT rolinherit\)\) THEN\n    RAISE EXCEPTION 'Existing group role has incompatible attributes'/,
+    );
+    assert.doesNotMatch(text, /PASSWORD|contains a login password/);
+  }
+});
+test("WITH LOGIN creates a login role with an escaped password and never alters an existing one", () => {
+  const text = sql(loginOp);
+  assert.ok(
+    text.includes(
+      `CREATE ROLE "example_login" LOGIN PASSWORD E'test-pass''word\\\\x' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS INHERIT;`,
+    ),
+  );
+  // Existing NOLOGIN or elevated roles are rejected, compatible logins are left unchanged.
+  assert.match(
+    text,
+    /AND \(NOT rolcanlogin OR rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls OR NOT rolinherit\)\) THEN\n    RAISE EXCEPTION 'Existing login role has incompatible attributes';\n  END IF;/,
+  );
+  const statements = text.replace(/^--.*\n/gm, "");
+  assert.doesNotMatch(statements, /ALTER ROLE|ALTER USER|PASSWORD NULL/);
+  assert.equal(text.match(/PASSWORD E'/g).length, 1);
+  assert.match(text, /^-- WARNING: This script contains a login password\./m);
+  assert.match(text, /Statement logs, client history, and this file itself/);
+  assert.match(text, /left unchanged, including its current password/);
+});
+test("WITH LOGIN keeps the dollar-quote safe when the password contains the tag", () => {
+  const text = sql({ ...loginOp, password: "x$grantor$y" });
+  assert.match(text, /^DO \$grantor_\$$/m);
+  assert.match(text, /^\$grantor_\$;$/m);
+  assert.match(text, /PASSWORD E'x\$grantor\$y'/);
+});
+test("WITH LOGIN rejects empty or control-character passwords and stray passwords", () => {
+  for (const password of [undefined, "", "   ", "a\nb", "a\tb", "a\0b", "a\x7fb", 42])
+    assert.throws(() => sql({ ...loginOp, password }), /password|control/i);
+  assert.throws(
+    () => sql({ kind: "group", group: "g", password: "test-pass'word" }),
+    /only for Create role WITH LOGIN/,
+  );
+  assert.throws(
+    () => sql({ kind: "group", group: "g", login: false, password: "x" }),
+    /only for Create role WITH LOGIN/,
+  );
+  assert.throws(() => sql({ ...loginOp, login: "true" }), /WITH LOGIN/);
+  assert.throws(
+    () => sql({ kind: "group", group: "g", login: "yes" }),
+    /true or false/,
+  );
+  assert.throws(() => sql({ ...base, password: "x" }), /WITH LOGIN/);
+  assert.throws(
+    () =>
+      sql({
+        kind: "profile",
+        profile: "reader",
+        group: "g",
+        database: "d",
+        schemas: "s",
+        login: true,
+        password: "x",
+      }),
+    /only available for Create role/,
+  );
+  assert.throws(() => sql({ ...loginOp, group: "pg_login" }), /non-reserved/);
+});
+test("generate() does not mutate a WITH LOGIN operation", () => {
+  const operations = [{ ...loginOp }, { kind: "group", group: "g" }],
+    before = JSON.stringify(operations);
+  generate(ctx, operations);
+  assert.equal(JSON.stringify(operations), before);
+});
