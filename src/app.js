@@ -1,4 +1,11 @@
-import { esc, field, select, check, checkboxGroup } from "./form-fields.js";
+import {
+  esc,
+  field,
+  select,
+  check,
+  checkboxGroup,
+  advanced,
+} from "./form-fields.js";
 import { renderFdwForm, readFdwOperation } from "./fdw-form.js";
 import { catalog, predefined } from "./catalog.js";
 import { generate, SINGLE_TYPES } from "./generator.js";
@@ -66,16 +73,37 @@ function common() {
     "grant",
   )}${field("grantees", "Recipient roles", "example_app", listHint)}</div><div class="field">${check("public", "Target PUBLIC (all current and future roles)")}</div>`;
 }
-function options() {
-  return `<details class="field advanced"><summary>Delegation & revoke options</summary><div class="field">${check("grantOption", "WITH GRANT OPTION (GRANT only)")}</div><div class="field">${check("optionOnly", "Revoke grant option only (REVOKE only)")}</div>${select(
-    "behavior",
-    "Dependent grants",
-    [
-      ["RESTRICT", "RESTRICT · fail if dependencies exist"],
-      ["CASCADE", "CASCADE · remove dependent grants"],
-    ],
-    "RESTRICT",
-  )}</details>`;
+// Grants "Advanced options": future-object creators and schema scope (Future
+// objects only), delegation, and revoke behaviour. Collapsed by default.
+function options(future) {
+  return advanced(
+    "grant-advanced",
+    "Advanced options",
+    `${future ? '<div id="future-fields"></div>' : ""}<div class="field">${check("grantOption", "WITH GRANT OPTION · recipient may pass these privileges on (GRANT only)")}</div><div class="field">${check("optionOnly", "Revoke the grant option only, keep the privilege (REVOKE only)")}</div>${select(
+      "behavior",
+      "Dependent grants",
+      [
+        ["RESTRICT", "RESTRICT · fail if dependencies exist"],
+        ["CASCADE", "CASCADE · remove dependent grants"],
+      ],
+      "RESTRICT",
+    )}`,
+  );
+}
+// Shows "(N set)" on each Advanced summary: inputs that differ from defaults.
+function updateAdvancedCounts() {
+  document.querySelectorAll("#operation-panel details.advanced").forEach((d) => {
+    let n = 0;
+    d.querySelectorAll("input,textarea,select").forEach((el) => {
+      if (el.type === "checkbox") n += el.checked !== el.defaultChecked;
+      else if (el.tagName === "SELECT") {
+        const base = [...el.options].findIndex((o) => o.defaultSelected);
+        n += el.selectedIndex !== Math.max(base, 0);
+      } else n += el.value !== el.defaultValue;
+    });
+    const tag = d.querySelector(":scope > summary > .adv-count");
+    if (tag) tag.textContent = n ? `(${n} set)` : "";
+  });
 }
 function clearFormFeedback() {
   $("form-error").hidden = true;
@@ -90,6 +118,7 @@ function describeFields() {
       if ($(el.id + "-hint"))
         el.setAttribute("aria-describedby", el.id + "-hint");
     });
+  updateAdvancedCounts();
 }
 // Carries user edits (not untouched examples) across a re-render of `container`.
 function keepEdits(container) {
@@ -110,10 +139,12 @@ function bindChoices(id, exclusiveValue, onChange = () => {}) {
       input.checked = !input.disabled && input.value !== exclusiveValue;
     });
     onChange();
+    updateAdvancedCounts();
   });
   $(id + "-clear-all").addEventListener("click", () => {
     inputs().forEach((input) => (input.checked = false));
     onChange();
+    updateAdvancedCounts();
   });
   inputs().forEach((input) =>
     input.addEventListener("change", () => {
@@ -139,7 +170,7 @@ function renderForm() {
         `<button type="button" class="profile-card ${key === profile ? "active" : ""}" data-profile="${key}" aria-pressed="${key === profile}"><strong>${title}</strong><span>${help}</span></button>`,
     ).join(
       "",
-    )}</div><p class="description" id="profile-help">${PROFILE_HELP[profile]}</p><div class="field-grid">${field("group", "Group role to create", `example_${profile}`)}${field("database", "Target database", "example_db")}</div>${field("schemas", "Schemas", "example_schema", listHint)}${creatorsField()}${field("members", "Assign to users / roles (optional)", "", "Must already exist. Passwords are never collected.", "input", "example_app")}`;
+    )}</div><p class="description" id="profile-help">${PROFILE_HELP[profile]}</p><div class="field-grid">${field("group", "Group role to create", `example_${profile}`)}${field("database", "Target database", "example_db")}</div>${field("schemas", "Schemas", "example_schema", listHint)}${field("members", "Assign to users / roles (optional)", "", "Must already exist. Passwords are never collected.", "input", "example_app")}${advanced("profile-advanced", "Advanced options", creatorsField())}`;
     document.querySelectorAll("[data-profile]").forEach((button) =>
       button.addEventListener("click", () => {
         profile = button.dataset.profile;
@@ -173,7 +204,15 @@ function renderForm() {
     renderFdwForm(panel);
   } else if (operation === "membership") {
     const builtins = predefined(context().version, context().platform);
-    panel.innerHTML = `<p class="description">Grant existing roles to existing users. Membership is cluster-wide.</p><div class="field-grid">${field("roles", "Roles to grant", "", "Optional when predefined roles are checked. " + listHint, "input", "example_writer")}${field("members", "Member users / roles", "example_app", listHint)}</div><details class="field advanced" id="builtin-panel"><summary>Predefined PostgreSQL roles</summary>${checkboxGroup(
+    panel.innerHTML = `<p class="description">Grant existing roles to existing users. Membership is cluster-wide.</p><div class="field-grid">${field("roles", "Roles to grant", "", "Optional when predefined roles are checked. " + listHint, "input", "example_writer")}${field("members", "Member users / roles", "example_app", listHint)}</div>${select(
+      "action",
+      "Action",
+      [
+        ["grant", "GRANT membership"],
+        ["revoke", "REVOKE membership"],
+      ],
+      "grant",
+    )}<details class="field advanced" id="builtin-panel"><summary>Predefined PostgreSQL roles <span class="adv-count"></span></summary>${checkboxGroup(
       "builtin",
       "Predefined PostgreSQL roles",
       "None selected by default. Select all includes powerful roles, such as host-file and program access where available. Unavailable roles stay disabled. AWS-managed roles are not generated.",
@@ -183,15 +222,7 @@ function renderForm() {
         label: r.name + (r.disabled ? " · " + r.note : ""),
         disabled: r.disabled,
       })),
-    )}<div class="description" id="builtin-info" aria-live="polite"></div></details>${select(
-      "action",
-      "Action",
-      [
-        ["grant", "GRANT membership"],
-        ["revoke", "REVOKE membership"],
-      ],
-      "grant",
-    )}<div id="member-options"></div>`;
+    )}<div class="description" id="builtin-info" aria-live="polite"></div></details>${advanced("member-advanced", "Advanced options", '<div id="member-options"></div>')}`;
     bindChoices("builtin", undefined, () => {
       const selected = new Set(
         [...document.querySelectorAll('[name="builtin"]:checked')].map(
@@ -211,7 +242,7 @@ function renderForm() {
     $("action").addEventListener("change", renderMemberOptions);
     renderMemberOptions();
   } else {
-    panel.innerHTML = `<p class="description">Create a reusable NOLOGIN group, or check WITH LOGIN for a role that can sign in. Elevated attributes are never set.</p>${field("group", "Role name", "example_access", "Cluster-wide. An existing role with different attributes is rejected.")}<div class="field">${check("login", "WITH LOGIN")}</div><div id="login-fields"></div>`;
+    panel.innerHTML = `<p class="description">Create a reusable group role (NOLOGIN), or tick WITH LOGIN for a role that can sign in. Elevated attributes are never set.</p>${field("group", "Role name", "example_access", "Cluster-wide. An existing role with different attributes is rejected.")}<div class="field">${check("login", "WITH LOGIN")}</div><div id="login-fields"></div>`;
     $("login").addEventListener("change", renderLoginFields);
   }
   describeFields();
@@ -264,7 +295,7 @@ function renderGrantBody() {
       .sort(([a], [b]) => COMMON_TYPES.indexOf(a) - COMMON_TYPES.indexOf(b)),
     more = entries.filter(([key]) => !COMMON_TYPES.includes(key));
   $("grant-body").innerHTML =
-    `<p class="description">${future ? "Privileges for objects created later (ALTER DEFAULT PRIVILEGES)." : "Grant or revoke on objects that exist now."}</p>${common()}<fieldset class="choice-group" id="objtype" aria-describedby="objtype-hint"><legend>Object types</legend><p class="hint" id="objtype-hint">Check several to grant them together. Each type gets only the permissions it supports.${future ? "" : " Columns, large objects, and parameters go one at a time."}</p><div class="checks">${top.map(box).join("")}</div>${more.length ? `<details class="more-types" id="more-types"><summary>More</summary><div class="checks">${more.map(box).join("")}</div></details>` : ""}</fieldset><div id="object-fields"></div><div id="permissions"></div>${options()}`;
+    `<p class="description">${future ? "Privileges for objects created later (ALTER DEFAULT PRIVILEGES)." : "Grant or revoke on objects that exist now."}</p>${common()}<fieldset class="choice-group" id="objtype" aria-describedby="objtype-hint"><legend>Object types</legend><p class="hint" id="objtype-hint">Check several to grant them together. Each type gets only the permissions it supports.${future ? "" : " Columns, large objects, and parameters go one at a time."}</p><div class="checks">${top.map(box).join("")}</div>${more.length ? `<details class="more-types" id="more-types"><summary>More</summary><div class="checks">${more.map(box).join("")}</div></details>` : ""}</fieldset><div id="object-fields"></div><div id="permissions"></div>${options(future)}`;
   document.querySelectorAll('[name="objtype"]').forEach((input) =>
     input.addEventListener("change", () => {
       if (input.checked)
@@ -298,10 +329,10 @@ function renderObjectFields(preserve = false) {
             .filter((value) => value !== "ALL PRIVILEGES"),
         )
       : null;
-  const restore = keepEdits($("object-fields")),
+  const restore = keepEdits($(future ? "future-fields" : "object-fields")),
     scope = $("scope")?.value;
   if (future)
-    $("object-fields").innerHTML =
+    $("future-fields").innerHTML =
       creatorsField() +
       field(
         "schemas",
@@ -445,6 +476,7 @@ function renderMemberOptions() {
           "RESTRICT",
         )}`
       : `<div class="field">${check("admin", "Allow member to delegate membership (ADMIN)", false)}</div>${modern ? `<div class="field">${check("inherit", "Automatically inherit privileges (INHERIT)", true)}</div><div class="field">${check("set", "Allow SET ROLE", true)}</div>` : '<p class="hint">On 14–15, inheritance follows the member INHERIT attribute and SET ROLE is available. ADMIN is added only when checked.</p>'}`;
+  updateAdvancedCounts();
 }
 function readOperation() {
   if (operation === "fdw") return readFdwOperation();
@@ -611,6 +643,18 @@ function switchOperation(next) {
     clearFormFeedback();
   } else renderForm();
 }
+// Hints open on demand from the small "?" next to a label.
+$("operation-panel").addEventListener("click", (event) => {
+  const help = event.target.closest?.("button.help");
+  if (!help) return;
+  const hint = $(help.getAttribute("aria-controls"));
+  if (!hint) return;
+  hint.hidden = !hint.hidden;
+  help.setAttribute("aria-expanded", String(!hint.hidden));
+  help.title = hint.hidden ? "Show help" : "Hide help";
+});
+for (const type of ["input", "change"])
+  $("operation-panel").addEventListener(type, updateAdvancedCounts);
 $("operation").addEventListener("change", () =>
   switchOperation($("operation").value),
 );

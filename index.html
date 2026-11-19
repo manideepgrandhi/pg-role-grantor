@@ -28,7 +28,15 @@
             <h1 id="builder-title">Build a permission script</h1>
           </div>
           <div class="engine-line">
-            <label for="platform"
+            <label for="operation" class="operation-pick"
+              >Operation<select id="operation" autocomplete="off">
+                <option value="profile">Access setup</option>
+                <option value="grants">Grants</option>
+                <option value="membership">Membership</option>
+                <option value="group">Create role</option>
+                <option value="fdw">FDW setup</option>
+              </select></label
+            ><label for="platform"
               >Engine<select id="platform" autocomplete="off">
                 <option value="postgres">PostgreSQL</option>
                 <option value="aurora">Aurora PostgreSQL</option>
@@ -39,14 +47,6 @@
                 <option>16</option>
                 <option>15</option>
                 <option>14</option>
-              </select></label
-            ><label for="operation"
-              >Operation<select id="operation" autocomplete="off">
-                <option value="profile">Access setup</option>
-                <option value="grants">Grants</option>
-                <option value="membership">Membership</option>
-                <option value="group">Create role</option>
-                <option value="fdw">FDW setup</option>
               </select></label
             >
           </div>
@@ -64,10 +64,11 @@
                 class="button"
                 id="reset-form"
                 type="button"
+                title="Reset keeps your script plan"
                 aria-describedby="reset-help"
               >
                 Reset form</button
-              ><span class="hint" id="reset-help"
+              ><span class="sr-only" id="reset-help"
                 >Reset keeps your script plan.</span
               >
             </div>

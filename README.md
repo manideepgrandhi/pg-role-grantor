@@ -18,15 +18,24 @@ Open `http://127.0.0.1:8080`. ES modules need HTTP, so opening `index.html` dire
 
 ## Build a script
 
-1. Select the engine (PostgreSQL or Aurora PostgreSQL) and a supported major version. PostgreSQL 17 is the default.
-2. In **Operation**, keep **Access setup** for a reader, read-write, or routine-executor group. Replace every `example_` value with your own name.
-3. Enter the database and schemas. **Future object creators** and **Assign to users / roles** are optional and start blank.
+1. In **Operation**, keep **Access setup** for a reader, read-write, or routine-executor group. Replace every `example_` value with your own name.
+2. Check the target next to it: the engine (PostgreSQL or Aurora PostgreSQL) and a supported major version. PostgreSQL 17 is the default.
+3. Enter the database and schemas. **Assign to users / roles** is optional and starts blank. **Future object creators** is under the collapsed **Advanced options**.
 4. Select **Add to script**.
 5. Pick another operation (**Grants**, **Membership**, **Create role**, or **FDW setup**) to add more. Remove an operation to replace it.
 6. Expand items in **Script plan** and read **Before you run this**.
 7. Select **Copy SQL** or **Download .sql**. Run the script yourself in the intended database using an account with the required authority.
 
 Optional fields show a grey placeholder instead of an example value. Required fields keep `example_` values to replace.
+
+**Common options up front, the rest under Advanced (v10).** Each form shows only what most scripts need. Rarely used settings sit in a collapsed **Advanced options** block that shows a count such as "(2 set)" when something inside differs from its default:
+
+- **Access setup:** Advanced holds *Future object creators*.
+- **Grants:** Advanced holds *WITH GRANT OPTION*, *Revoke the grant option only* and *Dependent grants*. On the **Future objects** side it also holds *Future object creators* and *Schema scope*.
+- **Membership:** *Predefined PostgreSQL roles* stays its own collapsed block. Advanced holds the ADMIN / INHERIT / SET options for GRANT, or the revoke scope and dependent grants for REVOKE.
+- **FDW setup:** three numbered steps (*Remote server*, *Role mappings*, *Tables & permissions*). Advanced holds the TLS options.
+
+Field explanations are behind a small **?** button next to each label. Select it to show or hide the text. Screen readers still get the text as the field's description. Nothing was removed in v10: every field, option, and generated statement is still there, and the generated SQL, verification SQL, and review notes are byte-for-byte the same as v9.
 
 **Create role** makes a reusable NOLOGIN group by default. Check **WITH LOGIN** to create a role that can sign in instead. A visible **Password** field appears with a 16-character random password (letters, digits, `!@#$%^&*_-`) generated in your browser with `crypto.getRandomValues`. Edit it or select **Regenerate**. Each check of **WITH LOGIN** starts with a new password, and unchecking removes the field and the `PASSWORD` clause. The password lives only in page memory: it is never saved, sent, or logged by the site, and reloading or **Reset form** clears it. It does appear in the form and in the copied or downloaded setup SQL, because that is the script you run. The script header then warns that statement logs, client history, and the file itself can expose it. The plan, review, and verification SQL say only that a password was set. Verification never reads `rolpassword` or `pg_authid`.
 
@@ -203,6 +212,12 @@ SITE_URL=http://127.0.0.1:8086/ CHROME_BIN=/usr/bin/google-chrome npm run test:r
 
 This suite checks every operation, the expandable script plan, blank-creator wording, the Verification SQL disclosure, actual clipboard and downloaded bytes, draft preservation, reset, version restrictions, keyboard controls, mobile layout, and offline generation. The local PostgreSQL suites also execute the generated inspection queries in read-only transactions before and after permission changes.
 
+Run the simplified-layout suite (Advanced options, **?** hints, FDW steps) with the same server:
+
+```sh
+SITE_URL=http://127.0.0.1:8086/ CHROME_BIN=/usr/bin/google-chrome npm run test:simplify-ui
+```
+
 ## Test native FDW setup
 
 The FDW suite creates and destroys its own temporary local PostgreSQL cluster. It needs PostgreSQL 17 server binaries with `postgres_fdw` installed, plus `psql` in PATH. Run it as a non-root OS user:
@@ -231,6 +246,7 @@ Publishing is a separate action from generating SQL. A local build does not prov
 
 ## Changelog
 
+- **v10** (2026-11-19) Simpler UI, nothing removed: **Operation** comes first, then the engine and version. Rarely used settings moved into collapsed **Advanced options** with an "(N set)" count (future-object creators, grant and revoke options, membership options, FDW TLS). Field hints sit behind a **?** button. FDW setup is split into three numbered steps. The generated SQL is unchanged. Service-worker cache `pg-role-grantor-v10`.
 - **v9** (2026-11-12) Footer adds a **More tools** list of the other live sites (home, DB Cheat Sheet, pg-commands, Paisa Diary, Office Days, and the three RDS compliance What's new pages). Generator behaviour is unchanged. Service-worker cache `pg-role-grantor-v9`.
 - **v8** (2026-11-11) **Create role** adds an optional **WITH LOGIN** checkbox. Checking it shows a visible Password field with a 16-character random password from `crypto.getRandomValues` (unbiased, letters, digits, `!@#$%^&*_-`), editable, with **Regenerate**. The SQL becomes `CREATE ROLE ... LOGIN PASSWORD ...` with the same conservative attributes. Reruns leave an existing compatible LOGIN role and its password unchanged, and reject NOLOGIN or elevated roles. The password stays in memory only. It appears in the setup SQL, with a header warning, but never in the plan, review, or verification SQL. Default Create role, Access setup, and FDW are unchanged. Service-worker cache `pg-role-grantor-v8`.
 - **v7** (2026-11-11) Simpler UI: one **Operation** dropdown replaces the tabs, engine and version sit on one line, and the intro and badges are gone. **Grants** merges object grants and defaults with an Existing / Future toggle and multi-select object types (one statement per type, unsupported permissions skipped). Script plan and Permission summary are one expandable list. Verification SQL moved into its own disclosure. Future object creators are optional: blank omits `FOR ROLE`. Optional fields start blank with placeholders. Reader now adds sequence SELECT + USAGE, function EXECUTE, and future type USAGE. Writer adds TRUNCATE. Service-worker cache `pg-role-grantor-v7`.
